@@ -57,7 +57,7 @@ def log_sample_data(cursor):
         file_name, document_page, chunk_no, chunk_text, model,
         prompt_tokens, total_tokens, created_date_time,
         chunk_vector
-    FROM document_vectorsa
+    FROM document_vectors
     LIMIT 1
     """)
 

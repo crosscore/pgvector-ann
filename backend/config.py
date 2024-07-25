@@ -1,4 +1,4 @@
-# pgvector-ann/config.py
+# pgvector-ann/backend/config.py
 import os
 from dotenv import load_dotenv
 

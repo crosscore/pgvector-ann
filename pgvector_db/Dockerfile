@@ -1,4 +1,4 @@
-# rag-pgvector/pgvector_db/Dockerfile
+# pgvector-ann/pgvector_db/Dockerfile
 
 FROM postgres:latest
 
@@ -21,12 +21,7 @@ RUN cd /tmp && \
     make install
 
 RUN echo "alias ls='ls --color=auto'" >> ~/.bashrc && \
-    echo "alias ll='ls -alF'" >> ~/.bashrc
+    echo "alias ll='ls -alF'" >> ~/.bashrc && \
+    echo "export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '" >> ~/.bashrc
 
 RUN echo "CREATE EXTENSION IF NOT EXISTS vector;" > /docker-entrypoint-initdb.d/10-create-extension.sql
-
-# copy custom postgresql.conf
-COPY postgresql.conf /etc/postgresql/postgresql.conf
-
-# PostgreSQLの起動コマンドを変更して、カスタム設定ファイルを使用
-CMD ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]

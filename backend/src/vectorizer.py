@@ -1,3 +1,4 @@
+# pgvector-ann/backend/src/vectorizer.py
 import os
 import pandas as pd
 from pypdf import PdfReader
@@ -5,11 +6,11 @@ from openai import AzureOpenAI, OpenAI
 import logging
 from config import *
 from langchain_text_splitters import CharacterTextSplitter
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
+logger.info("Initializing vectorizer to read from local PDF folder")
 
 if ENABLE_OPENAI:
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -58,16 +59,15 @@ def split_text_into_chunks(text):
     chunks = text_splitter.split_text(text)
     return chunks if chunks else [text]
 
-def process_pdf_and_create_dataframe(file_name):
+def process_pdf(file_name):
     file_path = os.path.join(PDF_INPUT_DIR, file_name)
     pages = extract_text_from_pdf(file_path)
     if not pages:
         logger.warning(f"No text extracted from PDF file: {file_name}")
-        return pd.DataFrame()
+        return None
 
-    data = []
+    processed_data = []
     total_chunks = 0
-
     for page in pages:
         page_text = page["page_content"]
         page_num = page["metadata"]["page"]
@@ -79,14 +79,12 @@ def process_pdf_and_create_dataframe(file_name):
         for chunk in chunks:
             if chunk.strip():  # Only process non-empty chunks
                 response = create_embedding(chunk)
-                jst = ZoneInfo("Asia/Tokyo")
-                current_time = datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S %Z')
-
-                data.append({
+                current_time = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')
+                processed_data.append({
                     'file_name': file_name,
-                    'document_page': page_num,
+                    'document_page': str(page_num),
                     'chunk_no': total_chunks,
-                    'text': chunk,
+                    'chunk_text': chunk,
                     'model': response.model,
                     'prompt_tokens': response.usage.prompt_tokens,
                     'total_tokens': response.usage.total_tokens,
@@ -96,26 +94,20 @@ def process_pdf_and_create_dataframe(file_name):
                 total_chunks += 1
 
     logger.info(f"Processed {file_name}: {len(pages)} pages, {total_chunks} chunks")
-    return pd.DataFrame(data)
-
-def save_dataframe_to_csv(df, file_name):
-    os.makedirs(CSV_OUTPUT_DIR, exist_ok=True)
-    csv_file_path = os.path.join(CSV_OUTPUT_DIR, f"{file_name.replace('.pdf', '')}.csv")
-    df.to_csv(csv_file_path, index=False)
-    logger.info(f"Saved CSV file: {csv_file_path}")
+    return pd.DataFrame(processed_data)
 
 def process_pdf_files():
-    try:
-        for file_name in get_pdf_files_from_local():
-            try:
-                df = process_pdf_and_create_dataframe(file_name)
-                if not df.empty:
-                    save_dataframe_to_csv(df, file_name)
-            except Exception as e:
-                logger.error(f"Error processing {file_name}: {e}")
-        logger.info("PDF files have been processed and saved as CSV files.")
-    except Exception as e:
-        logger.error(f"An error occurred during processing: {e}")
+    os.makedirs(CSV_OUTPUT_DIR, exist_ok=True)
+
+    for file_name in get_pdf_files_from_local():
+        processed_data = process_pdf(file_name)
+        if processed_data is not None and not processed_data.empty:
+            csv_file_name = f'{os.path.splitext(file_name)[0]}.csv'
+            output_file = os.path.join(CSV_OUTPUT_DIR, csv_file_name)
+            processed_data.to_csv(output_file, index=False)
+            logger.info(f"Processed data for {file_name} saved to {output_file}")
+        else:
+            logger.warning(f"No data processed for {file_name}")
 
 if __name__ == "__main__":
     process_pdf_files()
