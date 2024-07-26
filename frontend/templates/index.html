@@ -34,6 +34,7 @@
     <script>
         let displayMode = 'inline';
         let socket;
+        const backendUrl = window.location.origin.replace('8000', '8001');
 
         function initializeTheme() {
             const themeToggle = document.getElementById('theme-toggle');
@@ -90,31 +91,21 @@
             const resultsDiv = document.getElementById('results');
             let resultsHtml = '<h2>Search Results:</h2>';
             results.forEach((result, index) => {
+                const pdfUrl = `${backendUrl}/pdf/${result.file_name}?page=${result.page}`;
                 resultsHtml += `
                     <div class="result-item">
-                        <h3>${index + 1}. ${result.link
-                            ? `<a href="${result.link}${result.link.includes('?') ? '&' : '?'}page=${result.page}" target="_blank">${result.link_text}</a>`
-                            : `<span class="content-toggle" data-target="content-${index}">${result.link_text}</span>`}
+                        <h3>${index + 1}.
+                            <a href="${pdfUrl}" target="_blank">${result.link_text}</a>
                         </h3>
                         <p>Page: ${result.page}</p>
                         <p>Distance: ${result.distance.toFixed(4)} (lower is more similar)</p>
                         ${result.content
-                            ? `<div id="content-${index}" class="content" style="display:none;"><pre>${result.content}</pre></div>`
+                            ? `<div class="content"><pre>${result.content}</pre></div>`
                             : ''}
                     </div>
                 `;
             });
             resultsDiv.innerHTML = resultsHtml;
-            addContentToggleListeners();
-        }
-
-        function addContentToggleListeners() {
-            document.querySelectorAll('.content-toggle').forEach(toggle => {
-                toggle.addEventListener('click', function() {
-                    const contentId = this.getAttribute('data-target');
-                    showContent(contentId);
-                });
-            });
         }
 
         function search() {
@@ -137,18 +128,6 @@
                         document.getElementById('results').innerHTML = 'Error: Unable to connect to server';
                     }
                 }, 1000);
-            }
-        }
-
-        function showContent(id) {
-            const content = document.getElementById(id);
-            if (displayMode === 'inline') {
-                content.style.display = content.style.display === 'none' ? 'block' : 'none';
-            } else {
-                const contentText = content.innerText;
-                const newWindow = window.open('', '_blank');
-                newWindow.document.write('<pre>' + contentText + '</pre>');
-                newWindow.document.close();
             }
         }
 
