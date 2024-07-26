@@ -6,6 +6,8 @@ from openai import OpenAI
 from starlette.websockets import WebSocketDisconnect
 import logging
 from contextlib import contextmanager
+from pypdf import PdfReader, PdfWriter
+from io import BytesIO
 from config import *
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -109,7 +111,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         "distance": float(distance),
                         "link_text": f"{file_name}, p.{document_page}",
                         "link": f"/pdf/{file_name}?page={document_page}",
-                        "content": chunk_text
                     }
                     formatted_results.append(formatted_result)
 
@@ -131,14 +132,33 @@ async def get_pdf(file_name: str, page: int = None):
     if not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail=f"PDF not found: {file_name}")
 
-    def iterfile():
-        with open(pdf_path, mode="rb") as file_like:
-            yield from file_like
+    try:
+        reader = PdfReader(pdf_path)
+        writer = PdfWriter()
 
-    headers = {
-        "Content-Disposition": f"inline; filename={file_name}"
-    }
-    return StreamingResponse(iterfile(), media_type="application/pdf", headers=headers)
+        if page is not None:
+            page = int(page)
+            if 0 <= page < len(reader.pages):
+                writer.add_page(reader.pages[page])
+            else:
+                raise HTTPException(status_code=400, detail=f"Invalid page number: {page}")
+        else:
+            # ページが指定されていない場合は全ページを含める
+            for page in reader.pages:
+                writer.add_page(page)
+
+        buffer = BytesIO()
+        writer.write(buffer)
+        buffer.seek(0)
+
+        headers = {
+            "Content-Disposition": f"inline; filename={file_name}"
+        }
+        return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
+
+    except Exception as e:
+        logger.error(f"Error processing PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing PDF")
 
 @app.get("/")
 async def root():

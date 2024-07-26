@@ -91,21 +91,30 @@
             const resultsDiv = document.getElementById('results');
             let resultsHtml = '<h2>Search Results:</h2>';
             results.forEach((result, index) => {
-                const pdfUrl = `${backendUrl}/pdf/${result.file_name}?page=${result.page}`;
+                const pdfUrl = `${backendUrl}/pdf/${result.file_name}`;
                 resultsHtml += `
                     <div class="result-item">
                         <h3>${index + 1}.
                             <a href="${pdfUrl}" target="_blank">${result.link_text}</a>
                         </h3>
-                        <p>Page: ${result.page}</p>
                         <p>Distance: ${result.distance.toFixed(4)} (lower is more similar)</p>
-                        ${result.content
-                            ? `<div class="content"><pre>${result.content}</pre></div>`
-                            : ''}
+                        <div class="content" style="display: none;"><pre>${result.chunk_text}</pre></div>
+                        <button onclick="toggleChunkText(this)">Show Content</button>
                     </div>
                 `;
             });
             resultsDiv.innerHTML = resultsHtml;
+        }
+
+        function toggleChunkText(button) {
+            const contentDiv = button.previousElementSibling;
+            if (contentDiv.style.display === 'none') {
+                contentDiv.style.display = 'block';
+                button.textContent = 'Hide Chunk Text';
+            } else {
+                contentDiv.style.display = 'none';
+                button.textContent = 'Show Chunk Text';
+            }
         }
 
         function search() {
