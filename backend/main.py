@@ -148,7 +148,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 memory_change = (final_memory - initial_memory) / 1024
                 # メモリ使用量と検索時間のログ出力
                 logger.info(f"Search time: {search_time} seconds")
-                logger.info(f"Memory change: {memory_change} bytes")
+                logger.info(f"Memory change: {memory_change} KB")
 
                 response_data = {
                     "results": formatted_results,
