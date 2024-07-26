@@ -1,6 +1,23 @@
 # pgvector-ann/docker-compose.yml
 
 services:
+  frontend:
+    build: ./frontend
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app:${PYTHONPATH:-}
+      - TZ=Asia/Tokyo
+      - BACKEND_URL=ws://backend:8001
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - backend
+    networks:
+      - app_network
+
   backend:
     build: ./backend
     env_file:
@@ -8,9 +25,10 @@ services:
     environment:
       - PYTHONPATH=/app:${PYTHONPATH:-}
       - TZ=Asia/Tokyo
-      - PGTZ=Asia/Tokyo
     volumes:
       - ./backend:/app
+    ports:
+      - "8001:8001"
     depends_on:
       - pgvector_db
     networks:
@@ -24,7 +42,6 @@ services:
       - POSTGRES_DB=${PGVECTOR_DB_NAME}
       - POSTGRES_USER=${PGVECTOR_DB_USER}
       - POSTGRES_PASSWORD=${PGVECTOR_DB_PASSWORD}
-      - TZ=Asia/Tokyo
       - PGTZ=Asia/Tokyo
     volumes:
       - pg_data:/var/lib/postgresql/data

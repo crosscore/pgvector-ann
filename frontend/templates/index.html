@@ -1,0 +1,138 @@
+<!-- pgvector-ann/frontend/templates/index.html -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Similar TOC Search</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <button id="theme-toggle">Theme Switch</button>
+    <h1>Similar TOC Search</h1>
+    <div>
+        <label class="switch">
+            <input type="checkbox" id="display-mode-toggle">
+            <span class="slider"></span>
+        </label>
+        <span id="display-mode-label">Inline Display</span>
+    </div>
+    <input type="text" id="searchQuestion" placeholder="Enter your question">
+    <input type="number" id="topN" value="20" min="1" max="100">
+    <input type="number" id="scoreThreshold" value="0" min="-1" max="2" step="0.1">
+    <button onclick="search()">Search</button>
+    <div id="results"></div>
+
+    <script>
+        let displayMode = 'inline';
+
+        function initializeTheme() {
+            const themeToggle = document.getElementById('theme-toggle');
+            const theme = localStorage.getItem('theme') || 'dark';
+
+            if (theme === 'light') {
+                document.body.classList.add('light-mode');
+            }
+
+            themeToggle.addEventListener('click', () => {
+                document.body.classList.toggle('light-mode');
+                const newTheme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
+                localStorage.setItem('theme', newTheme);
+            });
+        }
+
+        function initializeWebSocket() {
+            const socket = new WebSocket(`ws://${window.location.host}/ws`);
+            const resultsDiv = document.getElementById('results');
+
+            socket.onopen = function(event) {
+                console.log("WebSocket connection opened");
+            };
+
+            socket.onmessage = function(event) {
+                console.log("Received message from server:", event.data);
+                const data = JSON.parse(event.data);
+
+                if (data.error) {
+                    console.error("Error received:", data.error);
+                    resultsDiv.innerHTML = `<p>Error: ${data.error}</p>`;
+                    return;
+                }
+
+                if (Array.isArray(data.results)) {
+                    console.log("Processing search results:", data.results);
+                    const results = data.results;
+                    let resultsHtml = '<h2>Search Results:</h2>';
+                    results.forEach((result, index) => {
+                        resultsHtml += `
+                            <div>
+                                <h3>${index + 1}. ${result.link
+                                    ? `<a href="${result.link}${result.link.includes('?') ? '&' : '?'}page=${result.location}" target="_blank">${result.link_text}</a>`
+                                    : `<span onclick="showContent('content-${index}')">${result.link_text}</span>`}
+                                </h3>
+                                <p>File Type: ${result.file_type}</p>
+                                <p>Location: ${result.location}</p>
+                                <p>Distance: ${result.distance.toFixed(4)} (lower is more similar)</p>
+                                ${result.content
+                                    ? `<div id="content-${index}" style="display:none;"><pre>${result.content}</pre></div>`
+                                    : ''}
+                            </div>
+                        `;
+                    });
+                    resultsDiv.innerHTML = resultsHtml;
+                } else {
+                    console.error('Unexpected data format:', data);
+                    resultsDiv.innerHTML = '<p>Error: Unexpected data format received</p>';
+                }
+            };
+
+            socket.onerror = function(error) {
+                console.error("WebSocket error:", error);
+            };
+
+            socket.onclose = function(event) {
+                console.log("WebSocket connection closed:", event);
+            };
+
+            return socket;
+        }
+
+        function search() {
+            const question = document.getElementById('searchQuestion').value;
+            const topN = parseInt(document.getElementById('topN').value);
+            const scoreThreshold = parseFloat(document.getElementById('scoreThreshold').value);
+            document.getElementById('results').innerHTML = 'Searching...';
+            console.log("Sending search request:", { question, top_n: topN, score_threshold: scoreThreshold });
+            const socket = initializeWebSocket();
+            socket.onopen = () => {
+                socket.send(JSON.stringify({ question, top_n: topN, score_threshold: scoreThreshold }));
+            };
+        }
+
+        function showContent(id) {
+            const content = document.getElementById(id);
+            if (displayMode === 'inline') {
+                content.style.display = content.style.display === 'none' ? 'block' : 'none';
+            } else {
+                const contentText = content.innerText;
+                const newWindow = window.open('', '_blank');
+                newWindow.document.write('<pre>' + contentText + '</pre>');
+                newWindow.document.close();
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeTheme();
+            initializeWebSocket();
+
+            const displayModeToggle = document.getElementById('display-mode-toggle');
+            const displayModeLabel = document.getElementById('display-mode-label');
+
+            displayModeToggle.addEventListener('change', () => {
+                displayMode = displayModeToggle.checked ? 'new-tab' : 'inline';
+                displayModeLabel.textContent = displayMode === 'inline' ? 'Inline Display' : 'Open in new tab';
+            });
+        });
+    </script>
+</body>
+</html>

@@ -6,3 +6,9 @@ pypdf
 psycopg2-binary
 pydantic
 pandas
+
+# main.py
+fastapi
+uvicorn
+jinja2
+websockets
