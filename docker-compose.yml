@@ -11,12 +11,14 @@ services:
       - BACKEND_URL=ws://backend:8001
     volumes:
       - ./frontend:/app
+      - /app/node_modules  # exclude node_modules
     ports:
       - "8000:8000"
     depends_on:
       - backend
     networks:
       - app_network
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   backend:
     build: ./backend
@@ -33,6 +35,7 @@ services:
       - pgvector_db
     networks:
       - app_network
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
   pgvector_db:
     build: ./pgvector_db

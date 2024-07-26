@@ -107,8 +107,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         "chunk_no": chunk_no,
                         "chunk_text": chunk_text,
                         "distance": float(distance),
-                        "link_text": f"{os.path.splitext(file_name)[0]}, p.{document_page}",
-                        "link": f"/pdf/{os.path.splitext(file_name)[0]}?page={document_page}",
+                        "link_text": f"{file_name}, p.{document_page}",
+                        "link": f"/pdf/{file_name}?page={document_page}",
                         "content": chunk_text
                     }
                     formatted_results.append(formatted_result)
@@ -126,19 +126,17 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/pdf/{file_name}")
 async def get_pdf(file_name: str, page: int = None):
-    file_name_without_ext = os.path.splitext(file_name)[0]
-    pdf_file_name = f"{file_name_without_ext}.pdf"
-    pdf_path = os.path.join(PDF_INPUT_DIR, pdf_file_name)
+    pdf_path = os.path.join(PDF_INPUT_DIR, file_name)
 
     if not os.path.exists(pdf_path):
-        raise HTTPException(status_code=404, detail=f"PDF not found: {pdf_file_name}")
+        raise HTTPException(status_code=404, detail=f"PDF not found: {file_name}")
 
     def iterfile():
         with open(pdf_path, mode="rb") as file_like:
             yield from file_like
 
     headers = {
-        "Content-Disposition": f"inline; filename={pdf_file_name}"
+        "Content-Disposition": f"inline; filename={file_name}"
     }
     return StreamingResponse(iterfile(), media_type="application/pdf", headers=headers)
 
