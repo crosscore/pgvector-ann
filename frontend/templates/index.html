@@ -30,8 +30,8 @@
         </div>
 
         <div id="search-metrics">
-            <p>Search Time: <span id="search-time"></span> seconds</p>
-            <p>Average Memory Usage: <span id="avg-memory-usage"></span> MB</p>
+            Search Time: <span id="search-time"></span> seconds<br>
+            Memory Change: <span id="memory-change"></span> MB
         </div>
 
         <div id="results"></div>
@@ -78,10 +78,11 @@
                 if (Array.isArray(data.results)) {
                     console.log("Processing search results:", data.results);
                     displayResults(data.results);
-                // Update search metrics
-                if (data.search_time !== undefined && data.avg_memory_usage !== undefined) {
+
+                // 検索メトリクスの更新
+                if (data.search_time !== undefined && data.memory_change !== undefined) {
                     document.getElementById('search-time').textContent = data.search_time.toFixed(4);
-                    document.getElementById('avg-memory-usage').textContent = data.avg_memory_usage.toFixed(2);
+                    document.getElementById('memory-change').textContent = data.memory_change.toFixed(2);
                 }
                 } else {
                     console.error('Unexpected data format:', data);

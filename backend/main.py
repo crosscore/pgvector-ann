@@ -10,9 +10,6 @@ from contextlib import contextmanager
 from pypdf import PdfReader, PdfWriter
 from io import BytesIO
 import time
-import psutil
-import statistics
-import docker
 from config import *
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -32,19 +29,6 @@ logger.info(f"Application initialized with INDEX_TYPE: {INDEX_TYPE}, "
             f"IVFFLAT_PROBES: {IVFFLAT_PROBES}, HNSW_EF_SEARCH: {HNSW_EF_SEARCH}")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
-
-# Dockerクライアントの初期化
-docker_client = docker.from_env()
-
-def get_pgvector_db_memory_usage():
-    try:
-        container = docker_client.containers.get('pgvector-ann_pgvector_db_1')
-        stats = container.stats(stream=False)
-        memory_usage = stats['memory_stats']['usage'] / (1024 * 1024)  # MB単位に変換
-        return memory_usage
-    except Exception as e:
-        logger.error(f"Error getting pgvector_db memory usage: {str(e)}")
-        return None
 
 @contextmanager
 def get_db_connection():
@@ -93,6 +77,17 @@ def get_search_query(index_type):
         LIMIT %s;
         """
 
+def get_db_memory_usage(cursor):
+    cursor.execute("""
+    SELECT sum(pg_total_relation_size(c.oid)::bigint)
+    FROM pg_class c
+    LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE relkind = 'r'
+    AND nspname = 'public'
+    """)
+    total_size = cursor.fetchone()[0]
+    return float(total_size) / (1024 * 1024) if total_size else 0  # MB単位に変換
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -112,44 +107,40 @@ async def websocket_endpoint(websocket: WebSocket):
                 ).data[0].embedding
 
                 start_time = time.time()
-                memory_usage = []
 
                 with get_db_connection() as (conn, cursor):
+                    initial_memory = get_db_memory_usage(cursor)
+
                     search_query = get_search_query(INDEX_TYPE)
                     cursor.execute(search_query, (question_vector, top_n))
                     results = cursor.fetchall()
 
-                    # pgvector_dbコンテナのメモリ使用量を記録
-                    memory_usage.append(get_pgvector_db_memory_usage())
+                    final_memory = get_db_memory_usage(cursor)
 
                 end_time = time.time()
                 search_time = end_time - start_time
 
                 logger.info(f"Query returned {len(results)} results")
 
-                formatted_results = []
-                for result in results:
-                    file_name, document_page, chunk_no, chunk_text, distance = result
-                    formatted_result = {
+                formatted_results = [
+                    {
                         "file_name": file_name,
                         "page": document_page,
                         "chunk_no": chunk_no,
                         "chunk_text": chunk_text,
-                        "distance": float(distance),
+                        "distance": float(distance),  # Decimalをfloatに変換
                         "link_text": f"{file_name}, p.{document_page}",
                         "link": f"/pdf/{file_name}?page={document_page}",
                     }
-                    formatted_results.append(formatted_result)
+                    for file_name, document_page, chunk_no, chunk_text, distance in results
+                ]
 
-                    # pgvector_dbコンテナのメモリ使用量を記録
-                    memory_usage.append(get_pgvector_db_memory_usage())
-
-                avg_memory_usage = statistics.mean([m for m in memory_usage if m is not None])
+                memory_change = float(final_memory - initial_memory)  # Decimalをfloatに変換
 
                 response_data = {
                     "results": formatted_results,
                     "search_time": search_time,
-                    "avg_memory_usage": avg_memory_usage
+                    "memory_change": memory_change
                 }
 
                 await websocket.send_json(response_data)
