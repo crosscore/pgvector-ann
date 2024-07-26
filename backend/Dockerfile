@@ -21,4 +21,6 @@ COPY . .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-CMD ["tail", "-f", "/dev/null"]
+# FastAPIアプリケーションを起動。
+# "main:app": main.py (app = FastAPI())
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
