@@ -9,8 +9,10 @@ import logging
 from contextlib import contextmanager
 from pypdf import PdfReader, PdfWriter
 from io import BytesIO
-import time
 import psutil
+import time
+import statistics
+from contextlib import contextmanager
 from config import *
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -78,24 +80,54 @@ def get_search_query(index_type):
         LIMIT %s;
         """
 
-def get_postgresql_memory_usage():
-    # PostgreSQLのプロセスIDを取得
-    postgresql_pids = os.popen("pgrep postgres").read().splitlines()
-
-    total_memory = 0
-    for pid in postgresql_pids:
-        process = psutil.Process(int(pid))
-        total_memory += process.memory_info().rss  # RSS (Resident Set Size)
-
-    return total_memory
-
 def get_system_memory_usage():
-    memory_info = psutil.virtual_memory()
-    return memory_info.used  # システム全体で使用されているメモリ
+    return psutil.virtual_memory().used / 1024  # KB
 
-def get_average_memory_usage(get_memory_usage_func):
-    memory_usages = [get_memory_usage_func() for _ in range(5)]
-    return sum(memory_usages) / len(memory_usages)
+def get_postgresql_memory_usage(conn):
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT sum(pg_total_relation_size(c.oid))::float
+            FROM pg_class c
+            LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE relkind = 'r' AND nspname NOT IN ('pg_catalog', 'information_schema')
+        """)
+        total_size = cur.fetchone()[0]
+
+        cur.execute("SELECT pg_database_size(current_database())::float")
+        db_size = cur.fetchone()[0]
+
+        cur.execute("SELECT sum(pg_total_relation_size(relid))::float FROM pg_stat_user_tables")
+        table_size = cur.fetchone()[0]
+
+    return {
+        'total_size': total_size / (1024) if total_size else 0,  # KB
+        'db_size': db_size / (1024) if db_size else 0,  # KB
+        'table_size': table_size / (1024) if table_size else 0  # KB
+    }
+
+class MemoryChangeContext:
+    def __init__(self, conn):
+        self.conn = conn
+        self.memory_change = None
+
+    def __enter__(self):
+        self.initial_system_memory = get_system_memory_usage()
+        self.initial_pg_memory = get_postgresql_memory_usage(self.conn)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        final_system_memory = get_system_memory_usage()
+        final_pg_memory = get_postgresql_memory_usage(self.conn)
+
+        self.memory_change = {
+            'system': final_system_memory - self.initial_system_memory,
+            'pg_total': final_pg_memory['total_size'] - self.initial_pg_memory['total_size'],
+            'pg_db': final_pg_memory['db_size'] - self.initial_pg_memory['db_size'],
+            'pg_tables': final_pg_memory['table_size'] - self.initial_pg_memory['table_size']
+        }
+
+def measure_memory_change(conn):
+    return MemoryChangeContext(conn)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -117,20 +149,25 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 start_time = time.time()
 
-                # クエリ実行前のメモリ使用量を取得
-                initial_memory = get_average_memory_usage(get_system_memory_usage)
                 with get_db_connection() as (conn, cursor):
-                    search_query = get_search_query(INDEX_TYPE)
-                    cursor.execute(search_query, (question_vector, top_n))
-                    results = cursor.fetchall()
-
-                # クエリ実行後のメモリ使用量を取得
-                final_memory = get_average_memory_usage(get_system_memory_usage)
+                    with measure_memory_change(conn) as mc:
+                        search_query = get_search_query(INDEX_TYPE)
+                        cursor.execute(search_query, (question_vector, top_n))
+                        results = cursor.fetchall()
 
                 end_time = time.time()
                 search_time = end_time - start_time
 
                 logger.info(f"Query returned {len(results)} results")
+                logger.info(f"Search time: {search_time:.4f} seconds")
+
+                if mc.memory_change:
+                    logger.info(f"System memory change: {mc.memory_change['system']:.2f} KB")
+                    logger.info(f"PostgreSQL total memory change: {mc.memory_change['pg_total']:.2f} KB")
+                    logger.info(f"PostgreSQL DB memory change: {mc.memory_change['pg_db']:.2f} KB")
+                    logger.info(f"PostgreSQL tables memory change: {mc.memory_change['pg_tables']:.2f} KB")
+                else:
+                    logger.warning("Unable to measure memory change")
 
                 formatted_results = [
                     {
@@ -138,22 +175,17 @@ async def websocket_endpoint(websocket: WebSocket):
                         "page": document_page,
                         "chunk_no": chunk_no,
                         "chunk_text": chunk_text,
-                        "distance": float(distance),  # Decimalをfloatに変換
+                        "distance": float(distance),
                         "link_text": f"{file_name}, p.{document_page}",
                         "link": f"/pdf/{file_name}?page={document_page}",
                     }
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
 
-                memory_change = (final_memory - initial_memory) / 1024
-                # メモリ使用量と検索時間のログ出力
-                logger.info(f"Search time: {search_time} seconds")
-                logger.info(f"Memory change: {memory_change} KB")
-
                 response_data = {
                     "results": formatted_results,
                     "search_time": search_time,
-                    "memory_change": memory_change
+                    "memory_change": mc.memory_change
                 }
                 await websocket.send_json(response_data)
 

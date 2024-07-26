@@ -31,7 +31,10 @@
 
         <div id="search-metrics">
             Search Time: <span id="search-time"></span> seconds<br>
-            Memory Change: <span id="memory-change"></span> KB
+            System Memory Change: <span id="system-memory-change"></span> KB<br>
+            PostgreSQL Total Memory Change: <span id="pg-total-memory-change"></span> KB<br>
+            PostgreSQL DB Memory Change: <span id="pg-db-memory-change"></span> KB<br>
+            PostgreSQL Tables Memory Change: <span id="pg-tables-memory-change"></span> KB
         </div>
 
         <div id="results"></div>
@@ -79,10 +82,13 @@
                     console.log("Processing search results:", data.results);
                     displayResults(data.results);
 
-                // 検索メトリクスの更新
-                if (data.search_time !== undefined && data.memory_change !== undefined) {
-                    document.getElementById('search-time').textContent = data.search_time.toFixed(4);
-                    document.getElementById('memory-change').textContent = data.memory_change.toFixed(0);
+                // Update search metrics
+                document.getElementById('search-time').textContent = data.search_time.toFixed(4);
+                if (data.memory_change) {
+                    document.getElementById('system-memory-change').textContent = data.memory_change.system.toFixed(2);
+                    document.getElementById('pg-total-memory-change').textContent = data.memory_change.pg_total.toFixed(2);
+                    document.getElementById('pg-db-memory-change').textContent = data.memory_change.pg_db.toFixed(2);
+                    document.getElementById('pg-tables-memory-change').textContent = data.memory_change.pg_tables.toFixed(2);
                 }
                 } else {
                     console.error('Unexpected data format:', data);
