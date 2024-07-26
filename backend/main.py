@@ -1,5 +1,6 @@
 from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import psycopg2
 from openai import OpenAI
 from starlette.websockets import WebSocketDisconnect
@@ -107,7 +108,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "chunk_text": chunk_text,
                         "distance": float(distance),
                         "link_text": f"{file_name}, p.{document_page}",
-                        "link": f"http://localhost:{S3_DB_EXTERNAL_PORT}/data/pdf/{file_name}?page={document_page}",
+                        "link": f"/pdf/{file_name}?page={document_page}",
                         "content": chunk_text
                     }
                     formatted_results.append(formatted_result)
@@ -122,6 +123,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"error": str(e)})
     finally:
         logger.info("WebSocket connection closed")
+
+@app.get("/pdf/{file_name}")
+async def get_pdf(file_name: str, page: int = None):
+    pdf_path = os.path.join(PDF_INPUT_DIR, file_name)
+
+    if not os.path.exists(pdf_path):
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    def iterfile():
+        with open(pdf_path, mode="rb") as file_like:
+            yield from file_like
+
+    return StreamingResponse(iterfile(), media_type="application/pdf")
 
 @app.get("/")
 async def root():
