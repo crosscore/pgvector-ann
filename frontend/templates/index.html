@@ -31,7 +31,7 @@
 
         <div id="search-metrics">
             Search Time: <span id="search-time"></span> seconds<br>
-            Memory Change: <span id="memory-change"></span> MB
+            Memory Change: <span id="memory-change"></span> KB
         </div>
 
         <div id="results"></div>
@@ -82,7 +82,7 @@
                 // 検索メトリクスの更新
                 if (data.search_time !== undefined && data.memory_change !== undefined) {
                     document.getElementById('search-time').textContent = data.search_time.toFixed(4);
-                    document.getElementById('memory-change').textContent = data.memory_change.toFixed(2);
+                    document.getElementById('memory-change').textContent = data.memory_change.toFixed(0);
                 }
                 } else {
                     console.error('Unexpected data format:', data);

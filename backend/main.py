@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from pypdf import PdfReader, PdfWriter
 from io import BytesIO
 import time
+import psutil
 from config import *
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -77,16 +78,24 @@ def get_search_query(index_type):
         LIMIT %s;
         """
 
-def get_db_memory_usage(cursor):
-    cursor.execute("""
-    SELECT sum(pg_total_relation_size(c.oid)::bigint)
-    FROM pg_class c
-    LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE relkind = 'r'
-    AND nspname = 'public'
-    """)
-    total_size = cursor.fetchone()[0]
-    return float(total_size) / (1024 * 1024) if total_size else 0  # MB単位に変換
+def get_postgresql_memory_usage():
+    # PostgreSQLのプロセスIDを取得
+    postgresql_pids = os.popen("pgrep postgres").read().splitlines()
+
+    total_memory = 0
+    for pid in postgresql_pids:
+        process = psutil.Process(int(pid))
+        total_memory += process.memory_info().rss  # RSS (Resident Set Size)
+
+    return total_memory
+
+def get_system_memory_usage():
+    memory_info = psutil.virtual_memory()
+    return memory_info.used  # システム全体で使用されているメモリ
+
+def get_average_memory_usage(get_memory_usage_func):
+    memory_usages = [get_memory_usage_func() for _ in range(5)]
+    return sum(memory_usages) / len(memory_usages)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -108,14 +117,15 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 start_time = time.time()
 
+                # クエリ実行前のメモリ使用量を取得
+                initial_memory = get_average_memory_usage(get_system_memory_usage)
                 with get_db_connection() as (conn, cursor):
-                    initial_memory = get_db_memory_usage(cursor)
-
                     search_query = get_search_query(INDEX_TYPE)
                     cursor.execute(search_query, (question_vector, top_n))
                     results = cursor.fetchall()
 
-                    final_memory = get_db_memory_usage(cursor)
+                # クエリ実行後のメモリ使用量を取得
+                final_memory = get_average_memory_usage(get_system_memory_usage)
 
                 end_time = time.time()
                 search_time = end_time - start_time
@@ -135,14 +145,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
 
-                memory_change = float(final_memory - initial_memory)  # Decimalをfloatに変換
+                memory_change = (final_memory - initial_memory) / 1024
+                # メモリ使用量と検索時間のログ出力
+                logger.info(f"Search time: {search_time} seconds")
+                logger.info(f"Memory change: {memory_change} bytes")
 
                 response_data = {
                     "results": formatted_results,
                     "search_time": search_time,
                     "memory_change": memory_change
                 }
-
                 await websocket.send_json(response_data)
 
             except WebSocketDisconnect:
