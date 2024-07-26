@@ -12,3 +12,5 @@ fastapi
 uvicorn
 jinja2
 websockets
+psutil
+docker

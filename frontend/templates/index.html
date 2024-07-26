@@ -1,15 +1,16 @@
+<!-- pgvector-ann/frontend/templates/index.html -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Similar TOC Search</title>
+    <title>Similar Chunk Search</title>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
     <header>
         <button id="theme-toggle">Theme Switch</button>
-        <h1>Similar TOC Search</h1>
+        <h1>Similar Chunk Search</h1>
     </header>
 
     <main>
@@ -26,6 +27,11 @@
             <input type="number" id="topN" value="20" min="1" max="100" title="Number of top results">
             <input type="number" id="scoreThreshold" value="1" min="-1" max="2" step="0.1" title="Score threshold">
             <button id="search-button">Search</button>
+        </div>
+
+        <div id="search-metrics">
+            <p>Search Time: <span id="search-time"></span> seconds</p>
+            <p>Average Memory Usage: <span id="avg-memory-usage"></span> MB</p>
         </div>
 
         <div id="results"></div>
@@ -72,6 +78,11 @@
                 if (Array.isArray(data.results)) {
                     console.log("Processing search results:", data.results);
                     displayResults(data.results);
+                // Update search metrics
+                if (data.search_time !== undefined && data.avg_memory_usage !== undefined) {
+                    document.getElementById('search-time').textContent = data.search_time.toFixed(4);
+                    document.getElementById('avg-memory-usage').textContent = data.avg_memory_usage.toFixed(2);
+                }
                 } else {
                     console.error('Unexpected data format:', data);
                     resultsDiv.innerHTML = '<p>Error: Unexpected data format received</p>';

@@ -1,3 +1,4 @@
+# pgvector-ann/backend/main.py
 from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -8,6 +9,10 @@ import logging
 from contextlib import contextmanager
 from pypdf import PdfReader, PdfWriter
 from io import BytesIO
+import time
+import psutil
+import statistics
+import docker
 from config import *
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -27,6 +32,19 @@ logger.info(f"Application initialized with INDEX_TYPE: {INDEX_TYPE}, "
             f"IVFFLAT_PROBES: {IVFFLAT_PROBES}, HNSW_EF_SEARCH: {HNSW_EF_SEARCH}")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+# Dockerクライアントの初期化
+docker_client = docker.from_env()
+
+def get_pgvector_db_memory_usage():
+    try:
+        container = docker_client.containers.get('pgvector-ann_pgvector_db_1')
+        stats = container.stats(stream=False)
+        memory_usage = stats['memory_stats']['usage'] / (1024 * 1024)  # MB単位に変換
+        return memory_usage
+    except Exception as e:
+        logger.error(f"Error getting pgvector_db memory usage: {str(e)}")
+        return None
 
 @contextmanager
 def get_db_connection():
@@ -93,10 +111,19 @@ async def websocket_endpoint(websocket: WebSocket):
                     model="text-embedding-3-large"
                 ).data[0].embedding
 
+                start_time = time.time()
+                memory_usage = []
+
                 with get_db_connection() as (conn, cursor):
                     search_query = get_search_query(INDEX_TYPE)
                     cursor.execute(search_query, (question_vector, top_n))
                     results = cursor.fetchall()
+
+                    # pgvector_dbコンテナのメモリ使用量を記録
+                    memory_usage.append(get_pgvector_db_memory_usage())
+
+                end_time = time.time()
+                search_time = end_time - start_time
 
                 logger.info(f"Query returned {len(results)} results")
 
@@ -114,7 +141,18 @@ async def websocket_endpoint(websocket: WebSocket):
                     }
                     formatted_results.append(formatted_result)
 
-                await websocket.send_json({"results": formatted_results})
+                    # pgvector_dbコンテナのメモリ使用量を記録
+                    memory_usage.append(get_pgvector_db_memory_usage())
+
+                avg_memory_usage = statistics.mean([m for m in memory_usage if m is not None])
+
+                response_data = {
+                    "results": formatted_results,
+                    "search_time": search_time,
+                    "avg_memory_usage": avg_memory_usage
+                }
+
+                await websocket.send_json(response_data)
 
             except WebSocketDisconnect:
                 logger.info("WebSocket disconnected")
