@@ -2,6 +2,7 @@
 from fastapi import FastAPI, WebSocket, Request, WebSocketDisconnect
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 import os
 import json
 import websockets
@@ -12,10 +13,18 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 BACKEND_URL = os.getenv("BACKEND_URL", "ws://backend:8001")
+BACKEND_HTTP_URL = os.getenv("BACKEND_HTTP_URL", "http://backend:8001")
 
 @app.get("/")
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/pdf/{file_name}")
+async def redirect_pdf(file_name: str, page: int = None):
+    url = f"{BACKEND_HTTP_URL}/pdf/{file_name}"
+    if page:
+        url += f"?page={page}"
+    return RedirectResponse(url)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

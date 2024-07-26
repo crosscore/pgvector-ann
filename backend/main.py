@@ -103,12 +103,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     file_name, document_page, chunk_no, chunk_text, distance = result
                     formatted_result = {
                         "file_name": file_name,
-                        "document_page": document_page,
+                        "page": document_page,
                         "chunk_no": chunk_no,
                         "chunk_text": chunk_text,
                         "distance": float(distance),
-                        "link_text": f"{file_name}, p.{document_page}",
-                        "link": f"/pdf/{file_name}?page={document_page}",
+                        "link_text": f"{os.path.splitext(file_name)[0]}, p.{document_page}",
+                        "link": f"/pdf/{os.path.splitext(file_name)[0]}?page={document_page}",
                         "content": chunk_text
                     }
                     formatted_results.append(formatted_result)
