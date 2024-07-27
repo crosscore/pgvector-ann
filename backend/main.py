@@ -30,7 +30,6 @@ logger.info(f"Application initialized with INDEX_TYPE: {INDEX_TYPE}, "
             f"IVFFLAT_PROBES: {IVFFLAT_PROBES}, HNSW_EF_SEARCH: {HNSW_EF_SEARCH}")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
-docker_client = docker.from_env()
 
 @contextmanager
 def get_db_connection():
@@ -73,6 +72,16 @@ def get_search_query(index_type):
     LIMIT %s;
     """
 
+docker_client = docker.from_env()
+
+def list_containers():
+    try:
+        containers = docker_client.containers.list()
+        return [container.name for container in containers]
+    except Exception as e:
+        logger.error(f"Error listing containers: {str(e)}")
+        return []
+
 def get_container_memory_stats(container_name):
     try:
         container = docker_client.containers.get(container_name)
@@ -84,15 +93,20 @@ def get_container_memory_stats(container_name):
         }
     except docker.errors.NotFound:
         logger.error(f"Container {container_name} not found")
-        return None
+    except KeyError as e:
+        logger.error(f"KeyError in container stats: {e}")
     except Exception as e:
         logger.error(f"Error getting container stats: {str(e)}")
-        return None
+    return None
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
+        # List available containers
+        available_containers = list_containers()
+        logger.info(f"Available containers: {available_containers}")
+
         while True:
             data = await websocket.receive_json()
             question, top_n = data["question"], data.get("top_n", 5)
@@ -102,8 +116,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 model="text-embedding-3-large"
             ).data[0].embedding
 
+            # コンテナ名を環境変数から取得
+            container_name = os.getenv('POSTGRES_CONTAINER_NAME', 'pgvector_db')
+            logger.info(f"Attempting to get stats for container: {container_name}")
+
             # メモリ使用量を取得（検索前）
-            pre_search_memory = get_container_memory_stats('your_postgres_container_name')
+            pre_search_memory = get_container_memory_stats(container_name)
+            if pre_search_memory is None:
+                logger.warning(f"Failed to get pre-search memory stats for {container_name}")
 
             start_time = time.time()
             try:
@@ -115,7 +135,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 search_time = time.time() - start_time
 
                 # メモリ使用量を取得（検索後）
-                post_search_memory = get_container_memory_stats('your_postgres_container_name')
+                post_search_memory = get_container_memory_stats(container_name)
+                if post_search_memory is None:
+                    logger.warning(f"Failed to get post-search memory stats for {container_name}")
 
                 formatted_results = [
                     {
@@ -130,19 +152,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
 
-                # メモリ使用量の変化を計算（変化がない場合も0として報告）
-                memory_change = {
-                    'total_memory_usage': 0,
-                    'rss': 0
-                }
-                if pre_search_memory and post_search_memory:
-                    memory_change['total_memory_usage'] = post_search_memory['total_memory_usage'] - pre_search_memory['total_memory_usage']
-                    memory_change['rss'] = post_search_memory['rss'] - pre_search_memory['rss']
-
                 response_data = {
                     "results": formatted_results,
                     "search_time": search_time,
-                    "memory_usage_change": memory_change
+                    "pre_search_memory": pre_search_memory,
+                    "post_search_memory": post_search_memory
                 }
                 await websocket.send_json(response_data)
             except Exception as e:
@@ -153,36 +167,6 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.info("WebSocket disconnected")
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
-
-@app.get("/pdf/{file_name}")
-async def get_pdf(file_name: str, page: int):
-    pdf_path = os.path.join(PDF_INPUT_DIR, file_name)
-
-    if not os.path.exists(pdf_path):
-        raise HTTPException(status_code=404, detail=f"PDF not found: {file_name}")
-
-    try:
-        reader = PdfReader(pdf_path)
-
-        if not (0 <= page < len(reader.pages)):
-            raise HTTPException(status_code=400, detail=f"Invalid page number: {page}. Valid range is 0-{len(reader.pages)-1}")
-
-        writer = PdfWriter()
-        writer.add_page(reader.pages[page])
-        output_filename = f"{file_name.rsplit('.', 1)[0]}_page_{page}.pdf"
-
-        buffer = BytesIO()
-        writer.write(buffer)
-        buffer.seek(0)
-
-        headers = {
-            "Content-Disposition": f"inline; filename={output_filename}"
-        }
-        return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
-
-    except Exception as e:
-        logger.error(f"Error processing PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error processing PDF")
 
 @app.get("/")
 async def root():

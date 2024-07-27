@@ -5,85 +5,88 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Similar Chunk Search</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
 </head>
 <body>
     <div class="container">
         <h1>Similar Chunk Search</h1>
-
         <div class="search-container">
             <input type="text" id="search-input" placeholder="Enter your search query">
             <button id="search-button">Search</button>
         </div>
-
         <div id="search-metrics" style="display: none;">
             <h2>Search Metrics</h2>
             <p>Search Time: <span id="search-time"></span> seconds</p>
-
             <div id="memory-usage">
-                <h3>PostgreSQL Memory Usage Change</h3>
+                <h3>PostgreSQL Memory Usage</h3>
                 <div id="results">
-                    <p>Total Memory: <span id="total-memory-change"></span> bytes</p>
-                    <p>RSS: <span id="rss-change"></span> bytes</p>
+                    <h4>Before Search:</h4>
+                    <p>Total Memory: <span id="pre-total-memory"></span></p>
+                    <p>RSS: <span id="pre-rss"></span></p>
+                    <h4>After Search:</h4>
+                    <p>Total Memory: <span id="post-total-memory"></span></p>
+                    <p>RSS: <span id="post-rss"></span></p>
                 </div>
             </div>
         </div>
-
         <div id="search-results"></div>
     </div>
-
     <script>
-        const searchInput = document.getElementById('search-input');
-        const searchButton = document.getElementById('search-button');
-        const searchMetrics = document.getElementById('search-metrics');
-        const searchTime = document.getElementById('search-time');
-        const totalMemoryChange = document.getElementById('total-memory-change');
-        const rssChange = document.getElementById('rss-change');
-        const resultsContainer = document.getElementById('search-results');
-
-        let socket;
-
-        function connectWebSocket() {
-            socket = new WebSocket('ws://localhost:8001/ws');
+        $(document).ready(function() {
+            const socket = new WebSocket("ws://localhost:8000/ws");
 
             socket.onmessage = function(event) {
                 const data = JSON.parse(event.data);
-                displayResults(data);
+                if (data.error) {
+                    $("#search-results").html(`<p class="error">${data.error}</p>`);
+                    return;
+                }
+
+                $("#search-time").text(data.search_time.toFixed(4));
+
+                // メモリ使用量の表示を更新（nullチェック付き）
+                function updateMemoryStats(prefix, memoryData) {
+                    if (memoryData && memoryData.total_memory_usage !== undefined) {
+                        $(`#${prefix}-total-memory`).text(memoryData.total_memory_usage + " bytes");
+                    } else {
+                        $(`#${prefix}-total-memory`).text("N/A");
+                    }
+                    if (memoryData && memoryData.rss !== undefined) {
+                        $(`#${prefix}-rss`).text(memoryData.rss + " bytes");
+                    } else {
+                        $(`#${prefix}-rss`).text("N/A");
+                    }
+                }
+
+                updateMemoryStats("pre", data.pre_search_memory);
+                updateMemoryStats("post", data.post_search_memory);
+
+                $("#search-metrics").show();
+
+                let resultsHtml = "<h2>Search Results</h2>";
+                data.results.forEach(function(result, index) {
+                    resultsHtml += `
+                        <div class="result">
+                            <h3>${index + 1}. <a href="${result.link}" target="_blank">${result.link_text}</a></h3>
+                            <p>${result.chunk_text}</p>
+                            <p class="distance">Distance: ${result.distance.toFixed(4)}</p>
+                        </div>
+                    `;
+                });
+                $("#search-results").html(resultsHtml);
             };
 
-            socket.onclose = function(event) {
-                console.log('WebSocket connection closed. Reconnecting...');
-                setTimeout(connectWebSocket, 1000);
-            };
+            $("#search-button").click(function() {
+                const query = $("#search-input").val();
+                socket.send(JSON.stringify({question: query}));
+            });
 
-            socket.onerror = function(error) {
-                console.error('WebSocket error:', error);
-            };
-        }
-
-        connectWebSocket();
-
-        searchButton.addEventListener('click', function() {
-            const query = searchInput.value;
-            if (query && socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({question: query, top_n: 20}));
-            }
+            $("#search-input").keypress(function(e) {
+                if (e.which == 13) {
+                    $("#search-button").click();
+                }
+            });
         });
-
-        function displayResults(data) {
-            searchMetrics.style.display = 'block';
-            searchTime.textContent = data.search_time.toFixed(3);
-
-            const memoryChange = data.memory_usage_change;
-            totalMemoryChange.textContent = memoryChange.total_memory_usage;
-            rssChange.textContent = memoryChange.rss;
-
-            resultsContainer.innerHTML = data.results.map(result => `
-                <div id="results">
-                    <a href="${result.link}" target="_blank"><h3>${result.file_name}, Page ${result.page}</h3></a>
-                    <p>${result.chunk_text}</p>
-                </div>
-            `).join('');
-        }
     </script>
 </body>
 </html>
