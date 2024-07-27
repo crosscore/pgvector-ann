@@ -8,7 +8,6 @@ from starlette.websockets import WebSocketDisconnect
 import logging
 from contextlib import contextmanager
 from pypdf import PdfReader, PdfWriter
-from io import BytesIO
 import time
 import docker
 from config import *
@@ -74,14 +73,6 @@ def get_search_query(index_type):
 
 docker_client = docker.from_env()
 
-def list_containers():
-    try:
-        containers = docker_client.containers.list()
-        return [container.name for container in containers]
-    except Exception as e:
-        logger.error(f"Error listing containers: {str(e)}")
-        return []
-
 def get_container_memory_stats(container_name):
     try:
         container = docker_client.containers.get(container_name)
@@ -103,10 +94,6 @@ def get_container_memory_stats(container_name):
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
-        # List available containers
-        available_containers = list_containers()
-        logger.info(f"Available containers: {available_containers}")
-
         while True:
             data = await websocket.receive_json()
             question, top_n = data["question"], data.get("top_n", 5)

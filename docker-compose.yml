@@ -2,6 +2,7 @@
 
 services:
   frontend:
+    container_name: frontend
     build: ./frontend
     env_file:
       - .env
@@ -21,12 +22,14 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   backend:
+    container_name: backend
     build: ./backend
     env_file:
       - .env
     environment:
       - PYTHONPATH=/app:${PYTHONPATH:-}
       - TZ=Asia/Tokyo
+      - POSTGRES_CONTAINER_NAME=pgvector_db
     privileged: true  # コンテナに特権を付与
     volumes:
       - ./backend:/app
@@ -41,6 +44,7 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
   pgvector_db:
+    container_name: pgvector_db
     build: ./pgvector_db
     env_file:
       - .env
