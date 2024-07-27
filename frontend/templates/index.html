@@ -10,26 +10,18 @@
 <body>
     <div class="container">
         <h1>Similar Chunk Search</h1>
+
         <div class="search-container">
-            <input type="text" id="search-input" placeholder="Enter your search query">
-            <button id="search-button">Search</button>
+            Search
         </div>
+
         <div id="search-metrics" style="display: none;">
             <h2>Search Metrics</h2>
-            <p>Search Time: <span id="search-time"></span> seconds</p>
-            <div id="memory-usage">
-                <h3>PostgreSQL Memory Usage</h3>
-                <div id="results">
-                    <h4>Before Search:</h4>
-                    <p>Total Memory: <span id="pre-total-memory"></span></p>
-                    <p>RSS: <span id="pre-rss"></span></p>
-                    <h4>After Search:</h4>
-                    <p>Total Memory: <span id="post-total-memory"></span></p>
-                    <p>RSS: <span id="post-rss"></span></p>
-                </div>
-            </div>
+            Search Time: <span id="search-time"></span> seconds
         </div>
-        <div id="search-results"></div>
+
+        <div id="search-results">
+        </div>
     </div>
     <script>
         $(document).ready(function() {
@@ -43,24 +35,6 @@
                 }
 
                 $("#search-time").text(data.search_time.toFixed(4));
-
-                // メモリ使用量の表示を更新（nullチェック付き）
-                function updateMemoryStats(prefix, memoryData) {
-                    if (memoryData && memoryData.total_memory_usage !== undefined) {
-                        $(`#${prefix}-total-memory`).text(memoryData.total_memory_usage + " bytes");
-                    } else {
-                        $(`#${prefix}-total-memory`).text("N/A");
-                    }
-                    if (memoryData && memoryData.rss !== undefined) {
-                        $(`#${prefix}-rss`).text(memoryData.rss + " bytes");
-                    } else {
-                        $(`#${prefix}-rss`).text("N/A");
-                    }
-                }
-
-                updateMemoryStats("pre", data.pre_search_memory);
-                updateMemoryStats("post", data.post_search_memory);
-
                 $("#search-metrics").show();
 
                 let resultsHtml = "<h2>Search Results</h2>";

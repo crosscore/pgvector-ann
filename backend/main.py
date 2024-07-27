@@ -1,4 +1,5 @@
 # pgvector-ann/backend/main.py
+import asyncio
 from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -9,7 +10,9 @@ import logging
 from contextlib import contextmanager
 from pypdf import PdfReader, PdfWriter
 import time
-import docker
+import os
+import pandas as pd
+from utils.docker_stats_csv import get_container_memory_stats, save_memory_stats_to_csv
 from config import *
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -71,24 +74,33 @@ def get_search_query(index_type):
     LIMIT %s;
     """
 
-docker_client = docker.from_env()
+async def collect_memory_stats(container_name, duration, interval=0.1):
+    start_time = time.time()
+    stats_list = []
+    while time.time() - start_time < duration:
+        stats = get_container_memory_stats(container_name)
+        if stats:
+            stats_list.append(stats)
+        await asyncio.sleep(interval)
+    return stats_list
 
-def get_container_memory_stats(container_name):
-    try:
-        container = docker_client.containers.get(container_name)
-        stats = container.stats(stream=False)
-        memory_stats = stats['memory_stats']
-        return {
-            'total_memory_usage': memory_stats['usage'],
-            'rss': memory_stats['stats']['rss']
-        }
-    except docker.errors.NotFound:
-        logger.error(f"Container {container_name} not found")
-    except KeyError as e:
-        logger.error(f"KeyError in container stats: {e}")
-    except Exception as e:
-        logger.error(f"Error getting container stats: {str(e)}")
-    return None
+def save_memory_stats_with_extra_info(stats_list, filename, index_type, search_time, keyword):
+    df_list = []
+    for stats in stats_list:
+        df = pd.DataFrame([stats])
+        df['index_type'] = index_type if index_type in ['hnsw', 'ivfflat'] else 'None'
+        df['search_time'] = search_time
+        df['keyword'] = keyword
+        df_list.append(df)
+
+    df = pd.concat(df_list, ignore_index=True)
+
+    # Reorder columns
+    columns = ['index'] + ['index_type', 'search_time', 'keyword'] + [col for col in df.columns if col not in ['index', 'index_type', 'search_time', 'keyword']]
+    df = df[columns]
+
+    df.to_csv(filename, index_label='index')
+    logger.info(f"Memory stats saved to {filename}")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -103,14 +115,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 model="text-embedding-3-large"
             ).data[0].embedding
 
-            # コンテナ名を環境変数から取得
             container_name = os.getenv('POSTGRES_CONTAINER_NAME', 'pgvector_db')
             logger.info(f"Attempting to get stats for container: {container_name}")
 
-            # メモリ使用量を取得（検索前）
-            pre_search_memory = get_container_memory_stats(container_name)
-            if pre_search_memory is None:
-                logger.warning(f"Failed to get pre-search memory stats for {container_name}")
+            # 検索前のメモリ使用量を取得
+            before_search_stats = await collect_memory_stats(container_name, duration=1)
 
             start_time = time.time()
             try:
@@ -119,12 +128,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     results = cursor.fetchall()
                     conn.commit()
 
+                    # 検索中のメモリ使用量を取得
+                    during_search_stats = await collect_memory_stats(container_name, duration=5)
+
                 search_time = time.time() - start_time
 
-                # メモリ使用量を取得（検索後）
-                post_search_memory = get_container_memory_stats(container_name)
-                if post_search_memory is None:
-                    logger.warning(f"Failed to get post-search memory stats for {container_name}")
+                # 検索後のメモリ使用量を取得
+                after_search_stats = await collect_memory_stats(container_name, duration=1)
 
                 formatted_results = [
                     {
@@ -139,11 +149,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
 
+                save_memory_stats_with_extra_info(before_search_stats, "./data/csv/before_search.csv", INDEX_TYPE, search_time, question)
+                save_memory_stats_with_extra_info(during_search_stats, "./data/csv/during_search.csv", INDEX_TYPE, search_time, question)
+                save_memory_stats_with_extra_info(after_search_stats, "./data/csv/after_search.csv", INDEX_TYPE, search_time, question)
+
                 response_data = {
                     "results": formatted_results,
                     "search_time": search_time,
-                    "pre_search_memory": pre_search_memory,
-                    "post_search_memory": post_search_memory
                 }
                 await websocket.send_json(response_data)
             except Exception as e:
