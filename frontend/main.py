@@ -2,7 +2,7 @@
 from fastapi import FastAPI, WebSocket, Request, WebSocketDisconnect
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 import os
 import json
 import websockets
@@ -14,6 +14,10 @@ templates = Jinja2Templates(directory="templates")
 
 BACKEND_URL = os.getenv("BACKEND_URL", "ws://backend:8001")
 BACKEND_HTTP_URL = os.getenv("BACKEND_HTTP_URL", "http://backend:8001")
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("/app/static/fastapi-1.svg", media_type="image/svg+xml")
 
 @app.get("/")
 async def read_root(request: Request):

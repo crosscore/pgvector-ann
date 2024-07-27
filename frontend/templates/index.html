@@ -1,6 +1,5 @@
-<!-- pgvector-ann/frontend/templates/index.html -->
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,171 +7,83 @@
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-    <header>
-        <button id="theme-toggle">Theme Switch</button>
+    <div class="container">
         <h1>Similar Chunk Search</h1>
-    </header>
-
-    <main>
-        <div class="display-mode-container">
-            <label class="switch" for="display-mode-toggle">
-                <input type="checkbox" id="display-mode-toggle">
-                <span class="slider"></span>
-            </label>
-            <span id="display-mode-label">Inline Display</span>
-        </div>
 
         <div class="search-container">
-            <input type="text" id="searchQuestion" placeholder="Enter your question">
-            <input type="number" id="topN" value="20" min="1" max="100" title="Number of top results">
-            <input type="number" id="scoreThreshold" value="1" min="-1" max="2" step="0.1" title="Score threshold">
+            <input type="text" id="search-input" placeholder="Enter your search query">
             <button id="search-button">Search</button>
         </div>
 
-        <div id="search-metrics">
-            Search Time: <span id="search-time"></span> seconds<br>
-            System Memory Change: <span id="system-memory-change"></span> KB<br>
-            PostgreSQL Total Memory Change: <span id="pg-total-memory-change"></span> KB<br>
-            PostgreSQL DB Memory Change: <span id="pg-db-memory-change"></span> KB<br>
-            PostgreSQL Tables Memory Change: <span id="pg-tables-memory-change"></span> KB
+        <div id="search-metrics" style="display: none;">
+            <h2>Search Metrics</h2>
+            <p>Search Time: <span id="search-time"></span> seconds</p>
+
+            <div id="memory-usage">
+                <h3>PostgreSQL Memory Usage Change</h3>
+                <div id="results">
+                    <p>Total Memory: <span id="total-memory-change"></span> bytes</p>
+                    <p>RSS: <span id="rss-change"></span> bytes</p>
+                </div>
+            </div>
         </div>
 
-        <div id="results"></div>
-    </main>
+        <div id="search-results"></div>
+    </div>
 
     <script>
-        let displayMode = 'inline';
+        const searchInput = document.getElementById('search-input');
+        const searchButton = document.getElementById('search-button');
+        const searchMetrics = document.getElementById('search-metrics');
+        const searchTime = document.getElementById('search-time');
+        const totalMemoryChange = document.getElementById('total-memory-change');
+        const rssChange = document.getElementById('rss-change');
+        const resultsContainer = document.getElementById('search-results');
+
         let socket;
-        const backendUrl = window.location.origin.replace('8000', '8001');
 
-        function initializeTheme() {
-            const themeToggle = document.getElementById('theme-toggle');
-            const theme = localStorage.getItem('theme') || 'dark';
-
-            if (theme === 'light') {
-                document.body.classList.add('light-mode');
-            }
-
-            themeToggle.addEventListener('click', () => {
-                document.body.classList.toggle('light-mode');
-                const newTheme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
-                localStorage.setItem('theme', newTheme);
-            });
-        }
-
-        function initializeWebSocket() {
-            socket = new WebSocket(`ws://${window.location.host}/ws`);
-            const resultsDiv = document.getElementById('results');
-
-            socket.onopen = function(event) {
-                console.log("WebSocket connection opened");
-            };
+        function connectWebSocket() {
+            socket = new WebSocket('ws://localhost:8001/ws');
 
             socket.onmessage = function(event) {
-                console.log("Received message from server:", event.data);
                 const data = JSON.parse(event.data);
-
-                if (data.error) {
-                    console.error("Error received:", data.error);
-                    resultsDiv.innerHTML = `<p>Error: ${data.error}</p>`;
-                    return;
-                }
-
-                if (Array.isArray(data.results)) {
-                    console.log("Processing search results:", data.results);
-                    displayResults(data.results);
-
-                // Update search metrics
-                document.getElementById('search-time').textContent = data.search_time.toFixed(4);
-                if (data.memory_change) {
-                    document.getElementById('system-memory-change').textContent = data.memory_change.system.toFixed(2);
-                    document.getElementById('pg-total-memory-change').textContent = data.memory_change.pg_total.toFixed(2);
-                    document.getElementById('pg-db-memory-change').textContent = data.memory_change.pg_db.toFixed(2);
-                    document.getElementById('pg-tables-memory-change').textContent = data.memory_change.pg_tables.toFixed(2);
-                }
-                } else {
-                    console.error('Unexpected data format:', data);
-                    resultsDiv.innerHTML = '<p>Error: Unexpected data format received</p>';
-                }
-            };
-
-            socket.onerror = function(error) {
-                console.error("WebSocket error:", error);
+                displayResults(data);
             };
 
             socket.onclose = function(event) {
-                console.log("WebSocket connection closed:", event);
+                console.log('WebSocket connection closed. Reconnecting...');
+                setTimeout(connectWebSocket, 1000);
+            };
+
+            socket.onerror = function(error) {
+                console.error('WebSocket error:', error);
             };
         }
 
-        function displayResults(results) {
-            const resultsDiv = document.getElementById('results');
-            let resultsHtml = '<h2>Search Results:</h2>';
-            results.forEach((result, index) => {
-                const pdfUrl = `${backendUrl}/pdf/${result.file_name}`;
-                resultsHtml += `
-                    <div class="result-item">
-                        <h3>${index + 1}.
-                            <a href="${pdfUrl}" target="_blank">${result.link_text}</a>
-                        </h3>
-                        <p>Distance: ${result.distance.toFixed(4)} (lower is more similar)</p>
-                        <div class="content" style="display: none;"><pre>${result.chunk_text}</pre></div>
-                        <button onclick="toggleChunkText(this)">Show Content</button>
-                    </div>
-                `;
-            });
-            resultsDiv.innerHTML = resultsHtml;
-        }
+        connectWebSocket();
 
-        function toggleChunkText(button) {
-            const contentDiv = button.previousElementSibling;
-            if (contentDiv.style.display === 'none') {
-                contentDiv.style.display = 'block';
-                button.textContent = 'Hide Chunk Text';
-            } else {
-                contentDiv.style.display = 'none';
-                button.textContent = 'Show Chunk Text';
+        searchButton.addEventListener('click', function() {
+            const query = searchInput.value;
+            if (query && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({question: query, top_n: 20}));
             }
-        }
-
-        function search() {
-            const question = document.getElementById('searchQuestion').value;
-            const topN = parseInt(document.getElementById('topN').value);
-            const scoreThreshold = parseFloat(document.getElementById('scoreThreshold').value);
-            document.getElementById('results').innerHTML = 'Searching...';
-            console.log("Sending search request:", { question, top_n: topN, score_threshold: scoreThreshold });
-
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ question, top_n: topN, score_threshold: scoreThreshold }));
-            } else {
-                console.error("WebSocket is not open. Reconnecting...");
-                initializeWebSocket();
-                setTimeout(() => {
-                    if (socket.readyState === WebSocket.OPEN) {
-                        socket.send(JSON.stringify({ question, top_n: topN, score_threshold: scoreThreshold }));
-                    } else {
-                        console.error("Failed to reconnect WebSocket");
-                        document.getElementById('results').innerHTML = 'Error: Unable to connect to server';
-                    }
-                }, 1000);
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            initializeTheme();
-            initializeWebSocket();
-
-            const displayModeToggle = document.getElementById('display-mode-toggle');
-            const displayModeLabel = document.getElementById('display-mode-label');
-            const searchButton = document.getElementById('search-button');
-
-            displayModeToggle.addEventListener('change', () => {
-                displayMode = displayModeToggle.checked ? 'new-tab' : 'inline';
-                displayModeLabel.textContent = displayMode === 'inline' ? 'Inline Display' : 'Open in new tab';
-            });
-
-            searchButton.addEventListener('click', search);
         });
+
+        function displayResults(data) {
+            searchMetrics.style.display = 'block';
+            searchTime.textContent = data.search_time.toFixed(3);
+
+            const memoryChange = data.memory_usage_change;
+            totalMemoryChange.textContent = memoryChange.total_memory_usage;
+            rssChange.textContent = memoryChange.rss;
+
+            resultsContainer.innerHTML = data.results.map(result => `
+                <div id="results">
+                    <a href="${result.link}" target="_blank"><h3>${result.file_name}, Page ${result.page}</h3></a>
+                    <p>${result.chunk_text}</p>
+                </div>
+            `).join('');
+        }
     </script>
 </body>
 </html>
