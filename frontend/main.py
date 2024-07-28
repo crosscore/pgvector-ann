@@ -1,12 +1,13 @@
 # pgvector-ann/frontend/main.py
-from fastapi import FastAPI, WebSocket, Request, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, Request, WebSocketDisconnect, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 import os
 import json
 import websockets
 import asyncio
+import httpx
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -24,11 +25,23 @@ async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/pdf/{file_name}")
-async def redirect_pdf(file_name: str, page: int = None):
+async def stream_pdf(file_name: str, page: int = None):
     url = f"{BACKEND_HTTP_URL}/data/pdf/{file_name}"
     if page:
         url += f"?page={page}"
-    return RedirectResponse(url)
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, stream=True)
+            response.raise_for_status()
+
+            return StreamingResponse(
+                response.iter_bytes(),
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'inline; filename="{file_name}"'}
+            )
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=str(e))
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
