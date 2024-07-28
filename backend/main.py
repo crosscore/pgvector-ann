@@ -9,6 +9,8 @@ import logging
 import time
 import os
 import asyncio
+from io import BytesIO
+from pypdf import PdfReader, PdfWriter
 from utils.docker_stats_csv import save_memory_stats_with_extra_info, collect_memory_stats
 from utils.db_utils import get_db_connection, get_search_query, get_row_count
 from config import *
@@ -54,8 +56,23 @@ async def get_pdf(file_name: str, page: int = None):
         raise HTTPException(status_code=404, detail="PDF file not found")
 
     try:
-        logger.info(f"Serving PDF file: {file_path}")
-        return FileResponse(file_path, media_type="application/pdf", filename=file_name)
+        if page is not None and page > 0:
+            logger.info(f"Extracting page {page} from PDF file: {file_path}")
+            pdf_reader = PdfReader(file_path)
+            pdf_writer = PdfWriter()
+
+            if page <= len(pdf_reader.pages):
+                pdf_writer.add_page(pdf_reader.pages[page - 1])  # Subtract 1 because PDF pages are 0-indexed
+                pdf_bytes = BytesIO()
+                pdf_writer.write(pdf_bytes)
+                pdf_bytes.seek(0)
+                return StreamingResponse(pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{file_name}_page_{page}.pdf"'})
+            else:
+                logger.error(f"Invalid page number: {page}")
+                raise HTTPException(status_code=400, detail=f"Invalid page number: {page}")
+        else:
+            logger.info(f"Serving full PDF file: {file_path}")
+            return FileResponse(file_path, media_type="application/pdf", filename=file_name)
     except Exception as e:
         logger.error(f"Error serving PDF file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error serving PDF file: {str(e)}")

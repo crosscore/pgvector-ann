@@ -39,8 +39,13 @@ async def stream_pdf(file_name: str, page: int = None):
     async def stream_response():
         async with httpx.AsyncClient() as client:
             async with client.stream('GET', url) as response:
-                async for chunk in response.aiter_bytes():
-                    yield chunk
+                if response.status_code == 200:
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+                else:
+                    error_message = await response.text()
+                    logger.error(f"Error from backend: {error_message}")
+                    raise HTTPException(status_code=response.status_code, detail=error_message)
 
     try:
         return StreamingResponse(

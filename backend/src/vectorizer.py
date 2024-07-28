@@ -32,7 +32,7 @@ def extract_text_from_pdf(file_path):
     try:
         with open(file_path, 'rb') as file:
             pdf = PdfReader(file)
-            return [{"page_content": page.extract_text(), "metadata": {"page": i}} for i, page in enumerate(pdf.pages)]
+            return [{"page_content": page.extract_text(), "metadata": {"page": i + 1}} for i, page in enumerate(pdf.pages)]
     except Exception as e:
         logger.error(f"Error extracting text from PDF {file_path}: {str(e)}")
         return []
@@ -80,6 +80,7 @@ def process_pdf(file_name):
             if chunk.strip():  # Only process non-empty chunks
                 response = create_embedding(chunk)
                 current_time = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')
+                total_chunks += 1
                 processed_data.append({
                     'file_name': file_name,
                     'document_page': str(page_num),
@@ -91,7 +92,6 @@ def process_pdf(file_name):
                     'created_date_time': current_time,
                     'chunk_vector': response.data[0].embedding
                 })
-                total_chunks += 1
 
     logger.info(f"Processed {file_name}: {len(pages)} pages, {total_chunks} chunks")
     return pd.DataFrame(processed_data)
