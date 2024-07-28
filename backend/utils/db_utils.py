@@ -46,3 +46,7 @@ def get_search_query(index_type):
     ORDER BY distance ASC
     LIMIT %s;
     """
+
+def get_row_count(cursor):
+    cursor.execute("SELECT COUNT(*) FROM document_vectors;")
+    return cursor.fetchone()[0]

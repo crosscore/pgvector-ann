@@ -2,13 +2,13 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from openai import OpenAI
+from openai import OpenAI, AzureOpenAI
 from starlette.websockets import WebSocketDisconnect
 import logging
 import time
 import os
 from utils.docker_stats_csv import save_memory_stats_with_extra_info, collect_memory_stats
-from utils.db_utils import get_db_connection, get_search_query
+from utils.db_utils import get_db_connection, get_search_query, get_row_count
 from config import *
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -27,7 +27,14 @@ app.add_middleware(
 logger.info(f"Application initialized with INDEX_TYPE: {INDEX_TYPE}, "
             f"IVFFLAT_PROBES: {IVFFLAT_PROBES}, HNSW_EF_SEARCH: {HNSW_EF_SEARCH}")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+if ENABLE_OPENAI:
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+else:
+    client = AzureOpenAI(
+        azure_endpoint=AZURE_OPENAI_ENDPOINT,
+        api_key=AZURE_OPENAI_API_KEY,
+        api_version=AZURE_OPENAI_API_VERSION
+    )
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -42,23 +49,23 @@ async def websocket_endpoint(websocket: WebSocket):
                 model="text-embedding-3-large"
             ).data[0].embedding
 
-            container_name = os.getenv('POSTGRES_CONTAINER_NAME', 'pgvector_db')
-            logger.info(f"Attempting to get stats for container: {container_name}")
+            logger.info(f"Attempting to get stats for container: {POSTGRES_CONTAINER_NAME}")
 
-            before_search_stats = await collect_memory_stats(container_name, duration=1)
+            before_search_stats = await collect_memory_stats(POSTGRES_CONTAINER_NAME, duration=1)
 
             start_time = time.time()
             try:
                 with get_db_connection() as (conn, cursor):
+                    row_count = get_row_count(cursor)
                     cursor.execute(get_search_query(INDEX_TYPE), (question_vector, top_n))
                     results = cursor.fetchall()
                     conn.commit()
 
-                    during_search_stats = await collect_memory_stats(container_name, duration=5)
+                    during_search_stats = await collect_memory_stats(POSTGRES_CONTAINER_NAME, duration=5)
 
                 search_time = time.time() - start_time
 
-                after_search_stats = await collect_memory_stats(container_name, duration=1)
+                after_search_stats = await collect_memory_stats(POSTGRES_CONTAINER_NAME, duration=1)
 
                 formatted_results = [
                     {
@@ -73,9 +80,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
 
-                save_memory_stats_with_extra_info(before_search_stats, os.path.join(CSV_OUTPUT_DIR ,'before_search.csv'), INDEX_TYPE, search_time, question)
-                save_memory_stats_with_extra_info(during_search_stats, os.path.join(CSV_OUTPUT_DIR, 'during_search.csv'), INDEX_TYPE, search_time, question)
-                save_memory_stats_with_extra_info(after_search_stats, os.path.join(CSV_OUTPUT_DIR, 'after_search.csv'), INDEX_TYPE, search_time, question)
+                save_memory_stats_with_extra_info(before_search_stats, os.path.join(CSV_OUTPUT_DIR ,'before_search.csv'), INDEX_TYPE, row_count, search_time, question)
+                save_memory_stats_with_extra_info(during_search_stats, os.path.join(CSV_OUTPUT_DIR, 'during_search.csv'), INDEX_TYPE, row_count, search_time, question)
+                save_memory_stats_with_extra_info(after_search_stats, os.path.join(CSV_OUTPUT_DIR, 'after_search.csv'), INDEX_TYPE, row_count, search_time, question)
 
                 response_data = {
                     "results": formatted_results,

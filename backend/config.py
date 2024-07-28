@@ -50,3 +50,4 @@ IVFFLAT_PROBES = int(os.getenv("IVFFLAT_PROBES", "5"))
 
 # その他の設定
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
+POSTGRES_CONTAINER_NAME = os.getenv("POSTGRES_CONTAINER_NAME", "pgvector_db")

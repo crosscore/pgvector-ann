@@ -32,7 +32,7 @@ async def collect_memory_stats(container_name, duration, interval=0.1):
         await asyncio.sleep(interval)
     return stats_list
 
-def save_memory_stats_with_extra_info(stats_list, filename, index_type, search_time, keyword):
+def save_memory_stats_with_extra_info(stats_list, filename, index_type, num_of_rows, search_time, keyword):
     df_list = []
     jst = pytz.timezone('Asia/Tokyo')
 
@@ -43,6 +43,7 @@ def save_memory_stats_with_extra_info(stats_list, filename, index_type, search_t
             'limit': memory_stats.get('limit'),
             **memory_stats.get('stats', {}),
             'index_type': index_type if index_type in ['hnsw', 'ivfflat'] else 'None',
+            'num_of_rows': num_of_rows,
             'search_time': search_time,
             'keyword': keyword
         }
@@ -56,7 +57,7 @@ def save_memory_stats_with_extra_info(stats_list, filename, index_type, search_t
     df = pd.concat(df_list, ignore_index=True)
 
     # Reorder columns
-    columns = ['index_type', 'search_time', 'keyword', 'timestamp'] + [col for col in df.columns if col not in ['index_type', 'search_time', 'keyword', 'timestamp']]
+    columns = ['index_type', 'num_of_rows', 'search_time', 'keyword', 'timestamp'] + [col for col in df.columns if col not in ['index_type', 'num_of_rows', 'search_time', 'keyword', 'timestamp']]
     df = df[columns]
 
     # Check if file exists and append
@@ -74,11 +75,3 @@ def save_memory_stats_with_extra_info(stats_list, filename, index_type, search_t
 def print_memory_stats(stats):
     print("Raw memory stats:")
     print(json.dumps(stats.get('memory_stats', {}), indent=2))
-
-if __name__ == "__main__":
-    CONTAINER_NAME = "pgvector_db"
-    CSV_FILENAME = "docker_memory_stats.csv"
-
-    stats = get_container_memory_stats(CONTAINER_NAME)
-    if stats:
-        save_memory_stats_with_extra_info([stats], CSV_FILENAME, 'None', 0, 'test')
