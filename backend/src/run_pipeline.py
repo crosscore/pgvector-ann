@@ -7,16 +7,13 @@ import csv
 import pandas as pd
 from config import INDEX_TYPE, PDF_INPUT_DIR, CSV_OUTPUT_DIR
 
-# Ensure the necessary directories exist
 log_dir = "/app/data/log"
 os.makedirs(log_dir, exist_ok=True)
 os.makedirs(PDF_INPUT_DIR, exist_ok=True)
 os.makedirs(CSV_OUTPUT_DIR, exist_ok=True)
 
-# Set up logging
 log_file = f"{log_dir}/run_pipeline.log"
-logging.basicConfig(filename=log_file, level=logging.INFO,
-                    format='%(asctime)s - %(message)s')
+logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(message)s')
 
 csv_output_file = f"{log_dir}/run_pipeline.csv"
 
@@ -45,7 +42,7 @@ def append_to_csv(filename, index_type, num_of_rows, execution_time):
         'filename': [filename],
         'index_type': [index_type],
         'num_of_rows': [num_of_rows],
-        'execution_time': [round(execution_time, 2)],  # Round to 2 decimal places
+        'execution_time': [round(execution_time, 2)],
         'timestamp': [timestamp]
     })
 
@@ -64,7 +61,7 @@ def run_script(script_name):
 
         # Log the summary
         logging.info(f"{script_name} executed successfully:")
-        logging.info(f"  - Execution time: {execution_time:.2f} seconds")  # Format to 2 decimal places in log
+        logging.info(f"  - Execution time: {execution_time:.2f} seconds")
         if script_name == 'csv_to_pgvector.py':
             row_count = count_csv_rows(CSV_OUTPUT_DIR)
             logging.info(f"  - Index type: {INDEX_TYPE.upper()}")
