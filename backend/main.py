@@ -2,6 +2,7 @@
 from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from openai import OpenAI, AzureOpenAI
 from starlette.websockets import WebSocketDisconnect
 import logging
@@ -17,9 +18,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+app.mount("/data", StaticFiles(directory="/app/data"), name="data") # 静的ファイルのマウント
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000"],
+    allow_origins=["http://localhost:8000", "http://frontend:8000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,11 +47,18 @@ async def save_stats_async(stats, filename, index_type, row_count, search_time, 
 
 @app.get("/pdf/{file_name}")
 async def get_pdf(file_name: str, page: int = None):
-    file_path = os.path.join("/app/data/pdf", file_name)
+    file_path = f"/app/data/pdf/{file_name}"
+    logger.info(f"Attempting to access PDF file: {file_path}")
     if not os.path.exists(file_path):
+        logger.error(f"PDF file not found: {file_path}")
         raise HTTPException(status_code=404, detail="PDF file not found")
 
-    return FileResponse(file_path, media_type="application/pdf", filename=file_name)
+    try:
+        logger.info(f"Serving PDF file: {file_path}")
+        return FileResponse(file_path, media_type="application/pdf", filename=file_name)
+    except Exception as e:
+        logger.error(f"Error serving PDF file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error serving PDF file: {str(e)}")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

@@ -7,7 +7,11 @@ import os
 import json
 import websockets
 import asyncio
+import logging
 import httpx
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -30,18 +34,26 @@ async def stream_pdf(file_name: str, page: int = None):
     if page is not None:
         url += f"?page={page}"
 
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(url, stream=True)
-            response.raise_for_status()
+    logger.info(f"Proxying PDF from backend: {url}")
 
-            return StreamingResponse(
-                response.iter_bytes(),
-                media_type="application/pdf",
-                headers={"Content-Disposition": f'inline; filename="{file_name}"'}
-            )
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    async def stream_response():
+        async with httpx.AsyncClient() as client:
+            async with client.stream('GET', url) as response:
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+
+    try:
+        return StreamingResponse(
+            stream_response(),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="{file_name}"'}
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error occurred while fetching PDF: {str(e)}")
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error occurred while fetching PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
