@@ -49,5 +49,4 @@ IVFFLAT_LISTS = int(os.getenv("IVFFLAT_LISTS", "20"))
 IVFFLAT_PROBES = int(os.getenv("IVFFLAT_PROBES", "5"))
 
 # その他の設定
-RUN_MODE = os.getenv("RUN_MODE", "test_pdf_download")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
