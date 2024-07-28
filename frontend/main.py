@@ -25,7 +25,7 @@ async def read_root(request: Request):
 
 @app.get("/pdf/{file_name}")
 async def redirect_pdf(file_name: str, page: int = None):
-    url = f"{BACKEND_HTTP_URL}/pdf/{file_name}"
+    url = f"{BACKEND_HTTP_URL}/data/pdf/{file_name}"
     if page:
         url += f"?page={page}"
     return RedirectResponse(url)
