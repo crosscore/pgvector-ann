@@ -7,6 +7,7 @@ from starlette.websockets import WebSocketDisconnect
 import logging
 import time
 import os
+import asyncio
 from utils.docker_stats_csv import save_memory_stats_with_extra_info, collect_memory_stats
 from utils.db_utils import get_db_connection, get_search_query, get_row_count
 from config import *
@@ -36,13 +37,18 @@ else:
         api_version=AZURE_OPENAI_API_VERSION
     )
 
+async def save_stats_async(stats, filename, index_type, row_count, search_time, question):
+    await asyncio.get_event_loop().run_in_executor(
+        None, save_memory_stats_with_extra_info, stats, filename, index_type, row_count, search_time, question
+    )
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
             data = await websocket.receive_json()
-            question, top_n = data["question"], data.get("top_n", 5)
+            question, top_n = data["question"], int(data.get("top_n", 20))  # Ensure top_n is an integer
 
             question_vector = client.embeddings.create(
                 input=question,
@@ -56,23 +62,21 @@ async def websocket_endpoint(websocket: WebSocket):
             start_time = time.time()
             try:
                 with get_db_connection() as (conn, cursor):
-                    row_count = get_row_count(cursor)
+                    row_count = int(get_row_count(cursor))  # Ensure row_count is an integer
                     cursor.execute(get_search_query(INDEX_TYPE), (question_vector, top_n))
                     results = cursor.fetchall()
                     conn.commit()
 
-                    during_search_stats = await collect_memory_stats(POSTGRES_CONTAINER_NAME, duration=5)
-
-                search_time = time.time() - start_time
+                search_time = round(time.time() - start_time, 6)  # Round to 6 decimal places
 
                 after_search_stats = await collect_memory_stats(POSTGRES_CONTAINER_NAME, duration=1)
 
                 formatted_results = [
                     {
-                        "file_name": file_name,
-                        "page": document_page,
-                        "chunk_no": chunk_no,
-                        "chunk_text": chunk_text,
+                        "file_name": str(file_name),
+                        "page": int(document_page),
+                        "chunk_no": int(chunk_no),
+                        "chunk_text": str(chunk_text),
                         "distance": float(distance),
                         "link_text": f"{file_name}, p.{document_page}",
                         "link": f"/pdf/{file_name}?page={document_page}",
@@ -80,9 +84,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
 
-                save_memory_stats_with_extra_info(before_search_stats, os.path.join(CSV_OUTPUT_DIR ,'before_search.csv'), INDEX_TYPE, row_count, search_time, question)
-                save_memory_stats_with_extra_info(during_search_stats, os.path.join(CSV_OUTPUT_DIR, 'during_search.csv'), INDEX_TYPE, row_count, search_time, question)
-                save_memory_stats_with_extra_info(after_search_stats, os.path.join(CSV_OUTPUT_DIR, 'after_search.csv'), INDEX_TYPE, row_count, search_time, question)
+                # Asynchronously save the stats
+                asyncio.create_task(save_stats_async(before_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR ,'before_search.csv'), INDEX_TYPE, row_count, search_time, question))
+                asyncio.create_task(save_stats_async(after_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR, 'after_search.csv'), INDEX_TYPE, row_count, search_time, question))
 
                 response_data = {
                     "results": formatted_results,
@@ -91,12 +95,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json(response_data)
             except Exception as e:
                 logger.error(f"Error processing query: {str(e)}")
+                logger.exception("Full traceback:")  # This will log the full traceback
                 await websocket.send_json({"error": str(e)})
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
+        logger.exception("Full traceback:")  # This will log the full traceback
 
 @app.get("/")
 async def root():

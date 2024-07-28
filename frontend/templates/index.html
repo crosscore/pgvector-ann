@@ -4,63 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Similar Chunk Search</title>
-    <link rel="stylesheet" href="/static/styles.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
 </head>
 <body>
     <div class="container">
         <h1>Similar Chunk Search</h1>
 
         <div class="search-container">
-            Search
+            <input type="text" id="search-input" placeholder="Enter your search query">
+            <input type="number" id="top-n-input" value="20" min="1" max="100">
+            <button id="search-button">Search</button>
         </div>
 
         <div id="search-metrics" style="display: none;">
             <h2>Search Metrics</h2>
-            Search Time: <span id="search-time"></span> seconds
+            <p>Search Time: <span id="search-time"></span> seconds</p>
         </div>
 
         <div id="search-results">
         </div>
     </div>
-    <script>
-        $(document).ready(function() {
-            const socket = new WebSocket("ws://localhost:8000/ws");
 
-            socket.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-                if (data.error) {
-                    $("#search-results").html(`<p class="error">${data.error}</p>`);
-                    return;
-                }
-
-                $("#search-time").text(data.search_time.toFixed(4));
-                $("#search-metrics").show();
-
-                let resultsHtml = "<h2>Search Results</h2>";
-                data.results.forEach(function(result, index) {
-                    resultsHtml += `
-                        <div class="result">
-                            <h3>${index + 1}. <a href="${result.link}" target="_blank">${result.link_text}</a></h3>
-                            <p>${result.chunk_text}</p>
-                            <p class="distance">Distance: ${result.distance.toFixed(4)}</p>
-                        </div>
-                    `;
-                });
-                $("#search-results").html(resultsHtml);
-            };
-
-            $("#search-button").click(function() {
-                const query = $("#search-input").val();
-                socket.send(JSON.stringify({question: query}));
-            });
-
-            $("#search-input").keypress(function(e) {
-                if (e.which == 13) {
-                    $("#search-button").click();
-                }
-            });
-        });
-    </script>
+    <script src="{{ url_for('static', path='/script.js') }}"></script>
 </body>
 </html>

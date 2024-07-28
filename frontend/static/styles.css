@@ -151,3 +151,18 @@ body.light-mode .slider {
 body.light-mode input:checked + .slider {
     background-color: #03dac6; /* ライトモードでのアクティブ時の色 */
 }
+
+.result {
+    margin-bottom: 20px;
+    padding: 10px;
+    border: 1px solid var(--results-border);
+    background-color: var(--results-bg);
+}
+
+.result h3 {
+    margin-top: 0;
+}
+
+.result p {
+    margin: 5px 0;
+}

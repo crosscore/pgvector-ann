@@ -7,6 +7,9 @@ import pytz
 import asyncio
 import logging
 import time
+import os
+from dateutil import parser
+from config import SEARCH_CSV_OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,7 @@ def get_container_memory_stats(container_name):
         logger.error(f"Container {container_name} not found")
     except Exception as e:
         logger.error(f"Error getting container stats: {str(e)}")
+        logger.exception("Full traceback:")
     return None
 
 async def collect_memory_stats(container_name, duration, interval=0.1):
@@ -30,47 +34,54 @@ async def collect_memory_stats(container_name, duration, interval=0.1):
         if stats:
             stats_list.append(stats)
         await asyncio.sleep(interval)
-    return stats_list
+    return stats_list[0] if stats_list else None  # Return only the first stat
 
-def save_memory_stats_with_extra_info(stats_list, filename, index_type, num_of_rows, search_time, keyword):
-    df_list = []
-    jst = pytz.timezone('Asia/Tokyo')
+def parse_timestamp(timestamp_str):
+    try:
+        return parser.parse(timestamp_str)
+    except Exception as e:
+        logger.error(f"Error parsing timestamp: {str(e)}")
+        return datetime.now(pytz.utc)
 
-    for stats in stats_list:
+def save_memory_stats_with_extra_info(stats, filename, index_type, num_of_rows, search_time, keyword):
+    try:
+        jst = pytz.timezone('Asia/Tokyo')
+
         memory_stats = stats.get('memory_stats', {})
         flat_stats = {
-            'usage': memory_stats.get('usage'),
-            'limit': memory_stats.get('limit'),
-            **memory_stats.get('stats', {}),
-            'index_type': index_type if index_type in ['hnsw', 'ivfflat'] else 'None',
-            'num_of_rows': num_of_rows,
-            'search_time': search_time,
-            'keyword': keyword
+            'usage': float(memory_stats.get('usage', 0)),
+            'limit': float(memory_stats.get('limit', 0)),
+            **{k: float(v) for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float))},
+            'index_type': str(index_type) if index_type in ['hnsw', 'ivfflat'] else 'None',
+            'num_of_rows': int(num_of_rows),
+            'search_time': round(float(search_time), 6),
+            'keyword': str(keyword)
         }
 
-        # Add timestamp
-        current_time = datetime.fromtimestamp(stats['read'] / 1e9, tz=jst)  # Converting nanoseconds to seconds
+        # Parse the timestamp
+        read_time = parse_timestamp(stats['read'])
+        current_time = read_time.astimezone(jst)
         flat_stats['timestamp'] = current_time.strftime('%Y-%m-%d %H:%M:%S%z')
 
-        df_list.append(pd.DataFrame([flat_stats]))
+        df = pd.DataFrame([flat_stats])
 
-    df = pd.concat(df_list, ignore_index=True)
+        # Reorder columns
+        columns = ['index_type', 'num_of_rows', 'search_time', 'keyword', 'timestamp'] + [col for col in df.columns if col not in ['index_type', 'num_of_rows', 'search_time', 'keyword', 'timestamp']]
+        df = df[columns]
 
-    # Reorder columns
-    columns = ['index_type', 'num_of_rows', 'search_time', 'keyword', 'timestamp'] + [col for col in df.columns if col not in ['index_type', 'num_of_rows', 'search_time', 'keyword', 'timestamp']]
-    df = df[columns]
+        # Check if file exists and append
+        os.makedirs(SEARCH_CSV_OUTPUT_DIR, exist_ok=True)
+        if os.path.exists(filename):
+            existing_df = pd.read_csv(filename, index_col='index', parse_dates=['timestamp'])
+            existing_df['timestamp'] = pd.to_datetime(existing_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S%z')
+            df = pd.concat([existing_df, df], ignore_index=True)
 
-    # Check if file exists and append
-    try:
-        existing_df = pd.read_csv(filename, index_col='index', parse_dates=['timestamp'])
-        existing_df['timestamp'] = pd.to_datetime(existing_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S%z')
-        df = pd.concat([existing_df, df], ignore_index=True)
-    except FileNotFoundError:
-        pass
-
-    df.index.name = 'index'
-    df.to_csv(filename)
-    logger.info(f"Memory stats saved to {filename}")
+        df.index.name = 'index'
+        df.to_csv(filename)
+        logger.info(f"Memory stats saved to {filename}")
+    except Exception as e:
+        logger.error(f"Error saving memory stats: {str(e)}")
+        logger.exception("Full traceback:")
 
 def print_memory_stats(stats):
     print("Raw memory stats:")

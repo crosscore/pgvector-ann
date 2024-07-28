@@ -30,11 +30,9 @@ services:
       - PYTHONPATH=/app:${PYTHONPATH:-}
       - TZ=Asia/Tokyo
       - POSTGRES_CONTAINER_NAME=pgvector_db
-    privileged: true  # コンテナに特権を付与
     volumes:
       - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock
-      - /sys/fs/cgroup:/sys/fs/cgroup:ro  # cgroup v1とv2の両方に対応
     ports:
       - "8001:8001"
     depends_on:
