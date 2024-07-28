@@ -48,7 +48,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_json()
-            question, top_n = data["question"], int(data.get("top_n", 20))  # Ensure top_n is an integer
+            question, top_n = data["question"], int(data.get("top_n", 20))
 
             question_vector = client.embeddings.create(
                 input=question,
@@ -62,7 +62,7 @@ async def websocket_endpoint(websocket: WebSocket):
             start_time = time.time()
             try:
                 with get_db_connection() as (conn, cursor):
-                    row_count = int(get_row_count(cursor))  # Ensure row_count is an integer
+                    row_count = int(get_row_count(cursor))
                     cursor.execute(get_search_query(INDEX_TYPE), (question_vector, top_n))
                     results = cursor.fetchall()
                     conn.commit()
@@ -84,7 +84,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
 
-                # Asynchronously save the stats
                 asyncio.create_task(save_stats_async(before_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR ,'before_search.csv'), INDEX_TYPE, row_count, search_time, question))
                 asyncio.create_task(save_stats_async(after_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR, 'after_search.csv'), INDEX_TYPE, row_count, search_time, question))
 
@@ -95,14 +94,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json(response_data)
             except Exception as e:
                 logger.error(f"Error processing query: {str(e)}")
-                logger.exception("Full traceback:")  # This will log the full traceback
+                logger.exception("Full traceback:")
                 await websocket.send_json({"error": str(e)})
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
-        logger.exception("Full traceback:")  # This will log the full traceback
+        logger.exception("Full traceback:")
 
 @app.get("/")
 async def root():

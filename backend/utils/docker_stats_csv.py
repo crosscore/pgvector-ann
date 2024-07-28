@@ -58,26 +58,32 @@ def save_memory_stats_with_extra_info(stats, filename, index_type, num_of_rows, 
             'keyword': str(keyword)
         }
 
-        # Parse the timestamp
         read_time = parse_timestamp(stats['read'])
         current_time = read_time.astimezone(jst)
         flat_stats['timestamp'] = current_time.strftime('%Y-%m-%d %H:%M:%S%z')
 
         df = pd.DataFrame([flat_stats])
 
-        # Reorder columns
         columns = ['index_type', 'num_of_rows', 'search_time', 'keyword', 'timestamp'] + [col for col in df.columns if col not in ['index_type', 'num_of_rows', 'search_time', 'keyword', 'timestamp']]
         df = df[columns]
 
-        # Check if file exists and append
+        # Explicitly set integer columns to int64 dtype
+        int_columns = ['usage', 'limit', 'num_of_rows'] + [col for col in df.columns if col not in ['index_type', 'search_time', 'keyword', 'timestamp']]
+        for col in int_columns:
+            df[col] = df[col].astype('int64')
+
         os.makedirs(SEARCH_CSV_OUTPUT_DIR, exist_ok=True)
         if os.path.exists(filename):
             existing_df = pd.read_csv(filename, index_col='index', parse_dates=['timestamp'])
             existing_df['timestamp'] = pd.to_datetime(existing_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S%z')
+            # Ensure integer columns in existing_df are also int64
+            for col in int_columns:
+                if col in existing_df.columns:
+                    existing_df[col] = existing_df[col].astype('int64')
             df = pd.concat([existing_df, df], ignore_index=True)
 
         df.index.name = 'index'
-        df.to_csv(filename)
+        df.to_csv(filename, float_format='%.6f')  # Use float_format for search_time
         logger.info(f"Memory stats saved to {filename}")
     except Exception as e:
         logger.error(f"Error saving memory stats: {str(e)}")
