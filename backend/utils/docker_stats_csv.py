@@ -49,9 +49,9 @@ def save_memory_stats_with_extra_info(stats, filename, index_type, num_of_rows, 
 
         memory_stats = stats.get('memory_stats', {})
         flat_stats = {
-            'usage': float(memory_stats.get('usage', 0)),
-            'limit': float(memory_stats.get('limit', 0)),
-            **{k: float(v) for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float))},
+            'usage': int(memory_stats.get('usage', 0)),
+            'limit': int(memory_stats.get('limit', 0)),
+            **{k: int(v) for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float))},
             'index_type': str(index_type) if index_type in ['hnsw', 'ivfflat'] else 'None',
             'num_of_rows': int(num_of_rows),
             'search_time': round(float(search_time), 6),
