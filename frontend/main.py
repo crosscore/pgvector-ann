@@ -27,7 +27,7 @@ async def read_root(request: Request):
 @app.get("/pdf/{file_name}")
 async def stream_pdf(file_name: str, page: int = None):
     url = f"{BACKEND_HTTP_URL}/pdf/{file_name}"
-    if page:
+    if page is not None:
         url += f"?page={page}"
 
     async with httpx.AsyncClient() as client:

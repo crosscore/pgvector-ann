@@ -87,7 +87,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "chunk_text": str(chunk_text),
                         "distance": float(distance),
                         "link_text": f"{file_name}, p.{document_page}",
-                        "link": f"/data/pdf/{file_name}?page={document_page}",
+                        "link": f"/pdf/{file_name}?page={document_page}",
                     }
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
