@@ -1,7 +1,7 @@
 # pgvector-ann/backend/main.py
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from openai import OpenAI, AzureOpenAI
 from starlette.websockets import WebSocketDisconnect
 import logging
@@ -42,6 +42,14 @@ async def save_stats_async(stats, filename, index_type, row_count, search_time, 
         None, save_memory_stats_with_extra_info, stats, filename, index_type, row_count, search_time, question
     )
 
+@app.get("/pdf/{file_name}")
+async def get_pdf(file_name: str, page: int = None):
+    file_path = os.path.join("/app/data/pdf", file_name)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="PDF file not found")
+
+    return FileResponse(file_path, media_type="application/pdf", filename=file_name)
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -79,7 +87,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "chunk_text": str(chunk_text),
                         "distance": float(distance),
                         "link_text": f"{file_name}, p.{document_page}",
-                        "link": f"/pdf/{file_name}?page={document_page}",
+                        "link": f"/data/pdf/{file_name}?page={document_page}",
                     }
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
