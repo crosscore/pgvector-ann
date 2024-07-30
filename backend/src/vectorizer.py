@@ -8,7 +8,7 @@ from config import *
 from langchain_text_splitters import CharacterTextSplitter
 from datetime import datetime, timezone
 
-logging.basicConfig(level=logging.INFO, format='%(message)s')
+logging.basicConfig(filename="/app/data/log/vectorizer.log", level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 logger.info("Initializing vectorizer to read from local PDF folder")
 
@@ -24,7 +24,11 @@ else:
     logger.info("Using Azure OpenAI API for embeddings")
 
 def get_pdf_files_from_local():
-    pdf_files = [f for f in os.listdir(PDF_INPUT_DIR) if f.endswith('.pdf')]
+    pdf_files = []
+    for root, _, files in os.walk(PDF_INPUT_DIR):
+        for file in files:
+            if file.endswith('.pdf'):
+                pdf_files.append(os.path.join(root, file))
     logger.info(f"Found {len(pdf_files)} PDF files in {PDF_INPUT_DIR}")
     return pdf_files
 
@@ -58,6 +62,11 @@ def split_text_into_chunks(text):
     )
     chunks = text_splitter.split_text(text)
     return chunks if chunks else [text]
+
+def get_file_size(file_path):
+    size_bytes = os.path.getsize(file_path)
+    size_mb = size_bytes / (1024 * 1024)
+    return f"{size_mb:.2f}MB"
 
 def process_pdf(file_name):
     file_path = os.path.join(PDF_INPUT_DIR, file_name)
@@ -97,17 +106,34 @@ def process_pdf(file_name):
     return pd.DataFrame(processed_data)
 
 def process_pdf_files():
-    os.makedirs(CSV_OUTPUT_DIR, exist_ok=True)
-
-    for file_name in get_pdf_files_from_local():
-        processed_data = process_pdf(file_name)
+    all_data = []
+    for file_path in get_pdf_files_from_local():
+        processed_data = process_pdf(file_path)
         if processed_data is not None and not processed_data.empty:
-            csv_file_name = f'{os.path.splitext(file_name)[0]}.csv'
-            output_file = os.path.join(CSV_OUTPUT_DIR, csv_file_name)
+            relative_path = os.path.relpath(file_path, PDF_INPUT_DIR)
+            output_dir = os.path.join(CSV_OUTPUT_DIR, os.path.dirname(relative_path))
+            os.makedirs(output_dir, exist_ok=True)
+
+            csv_file_name = f'{os.path.splitext(os.path.basename(file_path))[0]}.csv'
+            output_file = os.path.join(output_dir, csv_file_name)
+
             processed_data.to_csv(output_file, index=False)
-            logger.info(f"Processed data for {file_name} saved to {output_file}")
+            logger.info(f"CSV output completed for {csv_file_name}")
+
+            all_data.append(processed_data)
         else:
-            logger.warning(f"No data processed for {file_name}")
+            logger.warning(f"No data processed for {file_path}")
+
+    # Combine all processed data into a single DataFrame
+    if all_data:
+        combined_data = pd.concat(all_data, ignore_index=True)
+
+        os.makedirs(os.path.dirname("/app/data/csv/all/all.csv"), exist_ok=True)
+        combined_data.to_csv("/app/data/csv/all/all.csv", index=False)
+        logger.info("CSV output completed for all.csv")
+    else:
+        logger.warning("No data processed. all.csv was not created.")
 
 if __name__ == "__main__":
     process_pdf_files()
+    

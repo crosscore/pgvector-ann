@@ -7,7 +7,7 @@ from config import *
 import logging
 from contextlib import contextmanager
 
-logging.basicConfig(level=logging.INFO, format='%(message)s')
+logging.basicConfig(filename="/app/data/log/csv_to_pgvector.log", level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 @contextmanager
@@ -43,7 +43,8 @@ def create_table_and_index(cursor):
         prompt_tokens INTEGER,
         total_tokens INTEGER,
         created_date_time TIMESTAMPTZ,
-        chunk_vector vector(3072)
+        chunk_vector vector(3072),
+        business_category TEXT
     );
     """
     cursor.execute(create_table_query)
@@ -79,8 +80,8 @@ def process_csv_file(file_path, conn):
 
         insert_query = """
         INSERT INTO document_vectors
-        (file_name, document_page, chunk_no, chunk_text, model, prompt_tokens, total_tokens, created_date_time, chunk_vector)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::vector(3072));
+        (file_name, document_page, chunk_no, chunk_text, model, prompt_tokens, total_tokens, created_date_time, chunk_vector, business_category)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::vector(3072), %s);
         """
 
         data = []
@@ -92,10 +93,12 @@ def process_csv_file(file_path, conn):
                 logger.warning(f"Incorrect vector dimension for row. Expected 3072, got {len(embedding)}. Skipping.")
                 continue
 
+            business_category = row.get('business_category', os.path.basename(os.path.dirname(file_path)))
+
             data.append((
                 row['file_name'], row['document_page'], row['chunk_no'], row['chunk_text'],
                 row['model'], row['prompt_tokens'], row['total_tokens'], row['created_date_time'],
-                embedding
+                embedding, business_category
             ))
 
         try:
@@ -107,15 +110,26 @@ def process_csv_file(file_path, conn):
             logger.error(f"Error inserting batch: {e}")
 
 def process_csv_files():
+    ENABLE_ALL_CSV = os.getenv("ENABLE_ALL_CSV", "false").lower() == "true"
+    index_type_path = os.path.join(CSV_OUTPUT_DIR, INDEX_TYPE.lower())
+
     try:
         with get_db_connection() as conn:
-            for file_name in os.listdir(CSV_OUTPUT_DIR):
-                if file_name.endswith('.csv'):
-                    csv_file_path = os.path.join(CSV_OUTPUT_DIR, file_name)
-                    try:
-                        process_csv_file(csv_file_path, conn)
-                    except Exception as e:
-                        logger.error(f"Error processing {file_name}: {e}")
+            if ENABLE_ALL_CSV:
+                all_csv_path = os.path.join(index_type_path, "all", "all.csv")
+                if os.path.exists(all_csv_path):
+                    process_csv_file(all_csv_path, conn)
+                else:
+                    logger.warning(f"all.csv file not found at {all_csv_path}")
+            else:
+                for root, _, files in os.walk(index_type_path):
+                    if "all" in root.split(os.path.sep):
+                        continue
+                    for file in files:
+                        if file.endswith('.csv'):
+                            csv_file_path = os.path.join(root, file)
+                            process_csv_file(csv_file_path, conn)
+
             logger.info(f"CSV files have been processed and inserted into the database with {INDEX_TYPE.upper()} index.")
     except Exception as e:
         logger.error(f"An error occurred during processing: {e}")

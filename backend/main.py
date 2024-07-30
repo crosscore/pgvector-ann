@@ -42,9 +42,9 @@ else:
         api_version=AZURE_OPENAI_API_VERSION
     )
 
-async def save_stats_async(stats, filename, index_type, row_count, search_time, question):
+async def save_stats_async(stats, filename, row_count, search_time, question):
     await asyncio.get_event_loop().run_in_executor(
-        None, save_memory_stats_with_extra_info, stats, filename, index_type, row_count, search_time, question
+        None, save_memory_stats_with_extra_info, stats, filename, row_count, search_time, question
     )
 
 @app.get("/pdf/{file_name}")
@@ -119,8 +119,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
 
-                asyncio.create_task(save_stats_async(before_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR ,'before_search.csv'), INDEX_TYPE, row_count, search_time, question))
-                asyncio.create_task(save_stats_async(after_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR, 'after_search.csv'), INDEX_TYPE, row_count, search_time, question))
+                asyncio.create_task(save_stats_async(before_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR ,'before_search.csv'), row_count, search_time, question))
+                asyncio.create_task(save_stats_async(after_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR, 'after_search.csv'), row_count, search_time, question))
 
                 response_data = {
                     "results": formatted_results,
