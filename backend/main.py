@@ -49,9 +49,7 @@ async def save_stats_async(stats, filename, row_count, search_time, question, op
 
 @app.get("/pdf/{path:path}")
 async def get_pdf(path: str, page: int = None):
-    # Remove any leading slashes and "app/data/pdf/" from the path
-    clean_path = path.lstrip('/').replace('app/data/pdf/', '', 1)
-    file_path = os.path.join("/app/data/pdf", clean_path)
+    file_path = os.path.join("/app/data/pdf", path)
     logger.info(f"Attempting to access PDF file: {file_path}")
     if not os.path.exists(file_path):
         logger.error(f"PDF file not found: {file_path}")
@@ -116,7 +114,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "chunk_text": str(chunk_text),
                         "distance": float(distance),
                         "link_text": f"{os.path.basename(file_name)}, p.{document_page}",
-                        "link": f"pdf/{file_name}?page={document_page}",
+                        "link": f"pdf/{os.path.relpath(file_name, '/app/data/pdf')}?page={document_page}",
                     }
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]

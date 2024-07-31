@@ -54,7 +54,7 @@ async def stream_pdf(path: str, page: int = None):
         return StreamingResponse(
             stream_response(),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'inline; filename="{os.path.basename(path)}"'}
+            headers={"Content-Disposition": f'inline; filename="{os.path.basename(clean_path)}"'}
         )
     except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error occurred while fetching PDF: {str(e)}")
