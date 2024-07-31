@@ -9,7 +9,10 @@ import logging
 import time
 import os
 from dateutil import parser
-from config import SEARCH_CSV_OUTPUT_DIR, INDEX_TYPE
+from config import (
+    SEARCH_CSV_OUTPUT_DIR, INDEX_TYPE, HNSW_M, HNSW_EF_CONSTRUCTION,
+    HNSW_EF_SEARCH, IVFFLAT_LISTS, IVFFLAT_PROBES
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +52,19 @@ def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time,
 
         memory_stats = stats.get('memory_stats', {})
         flat_stats = {
-            'usage': int(memory_stats.get('usage', 0)),
-            'limit': int(memory_stats.get('limit', 0)),
-            **{k: int(v) for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float))},
             'index_type': str(INDEX_TYPE),
+            'hnsw_m': int(HNSW_M),
+            'hnsw_ef_construction': int(HNSW_EF_CONSTRUCTION),
+            'hnsw_ef_search': int(HNSW_EF_SEARCH),
+            'ivfflat_lists': int(IVFFLAT_LISTS),
+            'ivfflat_probes': int(IVFFLAT_PROBES),
             'num_of_rows': int(num_of_rows),
             'search_time': round(float(search_time), 6),
             'keyword': str(keyword),
-            'operation': str(operation)
+            'operation': str(operation),
+            'usage': int(memory_stats.get('usage', 0)),
+            'limit': int(memory_stats.get('limit', 0)),
+            **{k: int(v) for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float))}
         }
 
         read_time = parse_timestamp(stats['read'])
@@ -65,11 +73,22 @@ def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time,
 
         df = pd.DataFrame([flat_stats])
 
-        columns = ['index_type', 'num_of_rows', 'search_time', 'keyword', 'operation', 'timestamp'] + [col for col in df.columns if col not in ['index_type', 'num_of_rows', 'search_time', 'keyword', 'operation', 'timestamp']]
+        columns = [
+            'index_type', 'hnsw_m', 'hnsw_ef_construction', 'hnsw_ef_search', 'ivfflat_lists', 'ivfflat_probes',
+            'num_of_rows', 'search_time', 'keyword', 'operation', 'timestamp',
+            'usage', 'limit'
+        ] + [col for col in df.columns if col not in [
+            'index_type', 'hnsw_m', 'hnsw_ef_construction', 'hnsw_ef_search', 'ivfflat_lists', 'ivfflat_probes',
+            'num_of_rows', 'search_time', 'keyword', 'operation', 'timestamp',
+            'usage', 'limit'
+        ]]
         df = df[columns]
 
         # Explicitly set integer columns to int64 dtype
-        int_columns = ['usage', 'limit', 'num_of_rows'] + [col for col in df.columns if col not in ['index_type', 'search_time', 'keyword', 'operation', 'timestamp']]
+        int_columns = ['hnsw_m', 'hnsw_ef_construction', 'hnsw_ef_search', 'ivfflat_lists', 'ivfflat_probes',
+                        'num_of_rows', 'usage', 'limit'] + [col for col in df.columns if col not in [
+                        'index_type', 'search_time', 'keyword', 'operation', 'timestamp'
+        ]]
         for col in int_columns:
             df[col] = df[col].astype('int64')
 
