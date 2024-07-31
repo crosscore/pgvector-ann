@@ -28,9 +28,11 @@ async def favicon():
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/pdf/{category}/{file_name}")
-async def stream_pdf(category: str, file_name: str, page: int = None):
-    url = f"{BACKEND_HTTP_URL}/pdf/{category}/{file_name}"
+@app.get("/pdf/{path:path}")
+async def stream_pdf(path: str, page: int = None):
+    # Remove any leading slashes and "app/data/pdf/" from the path
+    clean_path = path.lstrip('/').replace('app/data/pdf/', '', 1)
+    url = f"{BACKEND_HTTP_URL}/pdf/{clean_path}"
     if page is not None:
         url += f"?page={page}"
 
@@ -43,7 +45,8 @@ async def stream_pdf(category: str, file_name: str, page: int = None):
                     async for chunk in response.aiter_bytes():
                         yield chunk
                 else:
-                    error_message = await response.text()
+                    error_content = await response.aread()
+                    error_message = error_content.decode()
                     logger.error(f"Error from backend: {error_message}")
                     raise HTTPException(status_code=response.status_code, detail=error_message)
 
@@ -51,7 +54,7 @@ async def stream_pdf(category: str, file_name: str, page: int = None):
         return StreamingResponse(
             stream_response(),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'inline; filename="{file_name}"'}
+            headers={"Content-Disposition": f'inline; filename="{os.path.basename(path)}"'}
         )
     except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error occurred while fetching PDF: {str(e)}")

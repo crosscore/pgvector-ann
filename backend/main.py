@@ -47,13 +47,15 @@ async def save_stats_async(stats, filename, row_count, search_time, question, op
         None, save_memory_stats_with_extra_info, stats, filename, row_count, search_time, question, operation
     )
 
-@app.get("/pdf/{category}/{file_name}")
-async def get_pdf(category: str, file_name: str, page: int = None):
-    file_path = f"/app/data/pdf/{category}/{file_name}"
+@app.get("/pdf/{path:path}")
+async def get_pdf(path: str, page: int = None):
+    # Remove any leading slashes and "app/data/pdf/" from the path
+    clean_path = path.lstrip('/').replace('app/data/pdf/', '', 1)
+    file_path = os.path.join("/app/data/pdf", clean_path)
     logger.info(f"Attempting to access PDF file: {file_path}")
     if not os.path.exists(file_path):
         logger.error(f"PDF file not found: {file_path}")
-        raise HTTPException(status_code=404, detail="PDF file not found")
+        raise HTTPException(status_code=404, detail=f"PDF file not found: {file_path}")
 
     try:
         if page is not None and page > 0:
@@ -66,13 +68,13 @@ async def get_pdf(category: str, file_name: str, page: int = None):
                 pdf_bytes = BytesIO()
                 pdf_writer.write(pdf_bytes)
                 pdf_bytes.seek(0)
-                return StreamingResponse(pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{file_name}_page_{page}.pdf"'})
+                return StreamingResponse(pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{os.path.basename(file_path)}_page_{page}.pdf"'})
             else:
                 logger.error(f"Invalid page number: {page}")
                 raise HTTPException(status_code=400, detail=f"Invalid page number: {page}")
         else:
             logger.info(f"Serving full PDF file: {file_path}")
-            return FileResponse(file_path, media_type="application/pdf", filename=file_name)
+            return FileResponse(file_path, media_type="application/pdf", filename=os.path.basename(file_path))
     except Exception as e:
         logger.error(f"Error serving PDF file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error serving PDF file: {str(e)}")
@@ -113,8 +115,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         "chunk_no": int(chunk_no),
                         "chunk_text": str(chunk_text),
                         "distance": float(distance),
-                        "link_text": f"{file_name}, p.{document_page}",
-                        "link": f"/pdf/{os.path.dirname(file_name)}/{os.path.basename(file_name)}?page={document_page}",
+                        "link_text": f"{os.path.basename(file_name)}, p.{document_page}",
+                        "link": f"pdf/{file_name}?page={document_page}",
                     }
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
