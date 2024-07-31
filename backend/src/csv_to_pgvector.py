@@ -14,22 +14,20 @@ logger = logging.getLogger(__name__)
 def get_db_connection():
     conn = None
     try:
-        conn = psycopg2.connect(
+        with psycopg2.connect(
             dbname=PGVECTOR_DB_NAME,
             user=PGVECTOR_DB_USER,
             password=PGVECTOR_DB_PASSWORD,
             host=PGVECTOR_DB_HOST,
             port=PGVECTOR_DB_PORT
-        )
-        logger.info(f"Connected to database: {PGVECTOR_DB_HOST}:{PGVECTOR_DB_PORT}")
-        yield conn
+        ) as conn:
+            logger.info(f"Connected to database: {PGVECTOR_DB_HOST}:{PGVECTOR_DB_PORT}")
+            yield conn
     except (KeyError, psycopg2.Error) as e:
         logger.error(f"Database connection error: {e}")
         raise
     finally:
-        if conn is not None:
-            conn.close()
-            logger.info("Database connection closed")
+        logger.info("Database connection closed")
 
 def create_table_and_index(cursor):
     create_table_query = f"""
@@ -111,18 +109,17 @@ def process_csv_file(file_path, conn):
 
 def process_csv_files():
     ENABLE_ALL_CSV = os.getenv("ENABLE_ALL_CSV", "false").lower() == "true"
-    index_type_path = os.path.join(CSV_OUTPUT_DIR, INDEX_TYPE.lower())
 
     try:
         with get_db_connection() as conn:
             if ENABLE_ALL_CSV:
-                all_csv_path = os.path.join(index_type_path, "all", "all.csv")
+                all_csv_path = os.path.join(CSV_OUTPUT_DIR, "all", "all.csv")
                 if os.path.exists(all_csv_path):
                     process_csv_file(all_csv_path, conn)
                 else:
                     logger.warning(f"all.csv file not found at {all_csv_path}")
             else:
-                for root, _, files in os.walk(index_type_path):
+                for root, _, files in os.walk(CSV_OUTPUT_DIR):
                     if "all" in root.split(os.path.sep):
                         continue
                     for file in files:
