@@ -46,7 +46,7 @@ def parse_timestamp(timestamp_str):
         logger.error(f"Error parsing timestamp: {str(e)}")
         return datetime.now(pytz.utc)
 
-def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time, keyword, operation):
+def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time, keyword):
     try:
         jst = pytz.timezone('Asia/Tokyo')
 
@@ -61,7 +61,6 @@ def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time,
             'num_of_rows': int(num_of_rows),
             'search_time': round(float(search_time), 4),
             'keyword': str(keyword),
-            'operation': str(operation),
             'usage': int(memory_stats.get('usage', 0)),
             'limit': int(memory_stats.get('limit', 0)),
             **{k: int(v) for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float))}
@@ -75,11 +74,11 @@ def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time,
 
         columns = [
             'index_type', 'hnsw_m', 'hnsw_ef_construction', 'hnsw_ef_search', 'ivfflat_lists', 'ivfflat_probes',
-            'num_of_rows', 'search_time', 'keyword', 'operation', 'timestamp',
+            'num_of_rows', 'search_time', 'keyword', 'timestamp',
             'usage', 'limit'
         ] + [col for col in df.columns if col not in [
             'index_type', 'hnsw_m', 'hnsw_ef_construction', 'hnsw_ef_search', 'ivfflat_lists', 'ivfflat_probes',
-            'num_of_rows', 'search_time', 'keyword', 'operation', 'timestamp',
+            'num_of_rows', 'search_time', 'keyword', 'timestamp',
             'usage', 'limit'
         ]]
         df = df[columns]
@@ -87,7 +86,7 @@ def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time,
         # Explicitly set integer columns to int64 dtype
         int_columns = ['hnsw_m', 'hnsw_ef_construction', 'hnsw_ef_search', 'ivfflat_lists', 'ivfflat_probes',
                         'num_of_rows', 'usage', 'limit'] + [col for col in df.columns if col not in [
-                        'index_type', 'search_time', 'keyword', 'operation', 'timestamp'
+                        'index_type', 'search_time', 'keyword', 'timestamp'
         ]]
         for col in int_columns:
             df[col] = df[col].astype('int64')
