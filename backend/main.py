@@ -34,7 +34,7 @@ logger.info(f"Application initialized with INDEX_TYPE: {INDEX_TYPE}, "
             f"IVFFLAT_PROBES: {IVFFLAT_PROBES}, HNSW_EF_SEARCH: {HNSW_EF_SEARCH}")
 
 if ENABLE_OPENAI:
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    client = OpenAI(api_key=OPENAI_API_KEY)
 else:
     client = AzureOpenAI(
         azure_endpoint=AZURE_OPENAI_ENDPOINT,

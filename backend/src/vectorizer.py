@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 logger.info("Initializing vectorizer to read from local PDF folder")
 
 if ENABLE_OPENAI:
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    client = OpenAI(api_key=OPENAI_API_KEY)
     logger.info("Using OpenAI API for embeddings")
 else:
     client = AzureOpenAI(
@@ -136,4 +136,3 @@ def process_pdf_files():
 
 if __name__ == "__main__":
     process_pdf_files()
-    
