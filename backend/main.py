@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-app.mount("/data", StaticFiles(directory="/app/data"), name="data") # 静的ファイルのマウント
+app.mount("/data", StaticFiles(directory="/app/data"), name="data")
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,14 +42,14 @@ else:
         api_version=AZURE_OPENAI_API_VERSION
     )
 
-async def save_stats_async(stats, filename, row_count, search_time, question):
+async def save_stats_async(stats, filename, row_count, search_time, question, operation):
     await asyncio.get_event_loop().run_in_executor(
-        None, save_memory_stats_with_extra_info, stats, filename, row_count, search_time, question
+        None, save_memory_stats_with_extra_info, stats, filename, row_count, search_time, question, operation
     )
 
-@app.get("/pdf/{file_name}")
-async def get_pdf(file_name: str, page: int = None):
-    file_path = f"/app/data/pdf/{file_name}"
+@app.get("/pdf/{category}/{file_name}")
+async def get_pdf(category: str, file_name: str, page: int = None):
+    file_path = f"/app/data/pdf/{category}/{file_name}"
     logger.info(f"Attempting to access PDF file: {file_path}")
     if not os.path.exists(file_path):
         logger.error(f"PDF file not found: {file_path}")
@@ -62,7 +62,7 @@ async def get_pdf(file_name: str, page: int = None):
             pdf_writer = PdfWriter()
 
             if page <= len(pdf_reader.pages):
-                pdf_writer.add_page(pdf_reader.pages[page - 1])  # Subtract 1 because PDF pages are 0-indexed
+                pdf_writer.add_page(pdf_reader.pages[page - 1])
                 pdf_bytes = BytesIO()
                 pdf_writer.write(pdf_bytes)
                 pdf_bytes.seek(0)
@@ -102,7 +102,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     results = cursor.fetchall()
                     conn.commit()
 
-                search_time = round(time.time() - start_time, 6)  # Round to 6 decimal places
+                search_time = round(time.time() - start_time, 6)
 
                 after_search_stats = await collect_memory_stats(POSTGRES_CONTAINER_NAME, duration=1)
 
@@ -114,13 +114,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         "chunk_text": str(chunk_text),
                         "distance": float(distance),
                         "link_text": f"{file_name}, p.{document_page}",
-                        "link": f"/pdf/{file_name}?page={document_page}",
+                        "link": f"/pdf/{os.path.dirname(file_name)}/{os.path.basename(file_name)}?page={document_page}",
                     }
                     for file_name, document_page, chunk_no, chunk_text, distance in results
                 ]
 
-                asyncio.create_task(save_stats_async(before_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR ,'before_search.csv'), row_count, search_time, question))
-                asyncio.create_task(save_stats_async(after_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR, 'after_search.csv'), row_count, search_time, question))
+                asyncio.create_task(save_stats_async(before_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR ,'before_search.csv'), row_count, search_time, question, "before_search"))
+                asyncio.create_task(save_stats_async(after_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR, 'after_search.csv'), row_count, search_time, question, "after_search"))
 
                 response_data = {
                     "results": formatted_results,

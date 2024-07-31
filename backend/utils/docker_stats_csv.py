@@ -9,7 +9,7 @@ import logging
 import time
 import os
 from dateutil import parser
-from config import SEARCH_CSV_OUTPUT_DIR
+from config import SEARCH_CSV_OUTPUT_DIR, INDEX_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def parse_timestamp(timestamp_str):
         logger.error(f"Error parsing timestamp: {str(e)}")
         return datetime.now(pytz.utc)
 
-def save_memory_stats_with_extra_info(stats, filename, index_type, num_of_rows, search_time, keyword):
+def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time, keyword, operation):
     try:
         jst = pytz.timezone('Asia/Tokyo')
 
@@ -52,10 +52,11 @@ def save_memory_stats_with_extra_info(stats, filename, index_type, num_of_rows, 
             'usage': int(memory_stats.get('usage', 0)),
             'limit': int(memory_stats.get('limit', 0)),
             **{k: int(v) for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float))},
-            'index_type': str(index_type) if index_type in ['hnsw', 'ivfflat'] else 'None',
+            'index_type': str(INDEX_TYPE),
             'num_of_rows': int(num_of_rows),
             'search_time': round(float(search_time), 6),
-            'keyword': str(keyword)
+            'keyword': str(keyword),
+            'operation': str(operation)
         }
 
         read_time = parse_timestamp(stats['read'])
@@ -64,11 +65,11 @@ def save_memory_stats_with_extra_info(stats, filename, index_type, num_of_rows, 
 
         df = pd.DataFrame([flat_stats])
 
-        columns = ['index_type', 'num_of_rows', 'search_time', 'keyword', 'timestamp'] + [col for col in df.columns if col not in ['index_type', 'num_of_rows', 'search_time', 'keyword', 'timestamp']]
+        columns = ['index_type', 'num_of_rows', 'search_time', 'keyword', 'operation', 'timestamp'] + [col for col in df.columns if col not in ['index_type', 'num_of_rows', 'search_time', 'keyword', 'operation', 'timestamp']]
         df = df[columns]
 
         # Explicitly set integer columns to int64 dtype
-        int_columns = ['usage', 'limit', 'num_of_rows'] + [col for col in df.columns if col not in ['index_type', 'search_time', 'keyword', 'timestamp']]
+        int_columns = ['usage', 'limit', 'num_of_rows'] + [col for col in df.columns if col not in ['index_type', 'search_time', 'keyword', 'operation', 'timestamp']]
         for col in int_columns:
             df[col] = df[col].astype('int64')
 

@@ -28,9 +28,9 @@ async def favicon():
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/pdf/{file_name}")
-async def stream_pdf(file_name: str, page: int = None):
-    url = f"{BACKEND_HTTP_URL}/pdf/{file_name}"
+@app.get("/pdf/{category}/{file_name}")
+async def stream_pdf(category: str, file_name: str, page: int = None):
+    url = f"{BACKEND_HTTP_URL}/pdf/{category}/{file_name}"
     if page is not None:
         url += f"?page={page}"
 
