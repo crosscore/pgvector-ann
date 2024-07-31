@@ -102,7 +102,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     results = cursor.fetchall()
                     conn.commit()
 
-                search_time = round(time.time() - start_time, 6)
+                search_time = round(time.time() - start_time, 4)
 
                 after_search_stats = await collect_memory_stats(POSTGRES_CONTAINER_NAME, duration=1)
 

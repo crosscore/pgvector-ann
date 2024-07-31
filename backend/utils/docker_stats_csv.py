@@ -59,7 +59,7 @@ def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time,
             'ivfflat_lists': int(IVFFLAT_LISTS),
             'ivfflat_probes': int(IVFFLAT_PROBES),
             'num_of_rows': int(num_of_rows),
-            'search_time': round(float(search_time), 6),
+            'search_time': round(float(search_time), 4),
             'keyword': str(keyword),
             'operation': str(operation),
             'usage': int(memory_stats.get('usage', 0)),
@@ -103,7 +103,7 @@ def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time,
             df = pd.concat([existing_df, df], ignore_index=True)
 
         df.index.name = 'index'
-        df.to_csv(filename, float_format='%.6f')  # Use float_format for search_time
+        df.to_csv(filename, float_format='%.4f')  # Use float_format for search_time
         logger.info(f"Memory stats saved to {filename}")
     except Exception as e:
         logger.error(f"Error saving memory stats: {str(e)}")

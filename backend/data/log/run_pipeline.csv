@@ -4,3 +4,4 @@ index,filename,index_type,num_of_rows,execution_time,timestamp
 2,csv_to_pgvector.py,HNSW,10,0.18,2024-07-31 16:24:10
 3,csv_to_pgvector.py,IVFFLAT,10,0.19,2024-07-31 16:34:55
 4,csv_to_pgvector.py,IVFFLAT,10,0.29,2024-07-31 18:17:50
+5,csv_to_pgvector.py,HNSW,10,0.29,2024-07-31 21:55:15
