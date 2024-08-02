@@ -22,16 +22,16 @@ def get_db_connection():
         options="-c timezone=Asia/Tokyo",
     )
 
-def get_table_structure(cursor):
-    cursor.execute("""
+def get_table_structure(cursor, table_name):
+    cursor.execute(f"""
     SELECT column_name, data_type
     FROM information_schema.columns
-    WHERE table_name = 'document_vectors';
-    """)
+    WHERE table_name = %s;
+    """, (table_name,))
     return cursor.fetchall()
 
-def get_index_info(cursor):
-    cursor.execute("""
+def get_index_info(cursor, table_name):
+    cursor.execute(f"""
     SELECT
         i.relname AS index_name,
         a.attname AS column_name,
@@ -44,20 +44,20 @@ def get_index_info(cursor):
         JOIN pg_am am ON i.relam = am.oid
         LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
     WHERE
-        t.relname = 'document_vectors'
+        t.relname = %s
     ORDER BY
         i.relname, a.attnum;
-    """)
+    """, (table_name,))
     return cursor.fetchall()
 
-def log_sample_data(cursor):
-    logger.info("\n------ サンプルデータ (最初の1行) ------")
-    cursor.execute("""
+def log_sample_data(cursor, table_name):
+    logger.info(f"\n------ サンプルデータ (最初の1行) from {table_name} ------")
+    cursor.execute(f"""
     SELECT
         file_name, document_page, chunk_no, chunk_text, model,
         prompt_tokens, total_tokens, created_date_time,
         chunk_vector
-    FROM document_vectors
+    FROM {table_name}
     LIMIT 1
     """)
 
@@ -71,19 +71,26 @@ def log_sample_data(cursor):
                 jst_time = value.astimezone(ZoneInfo("Asia/Tokyo"))
                 logger.info(f"{key}: {type(value).__name__} - {jst_time}")
             elif key == 'chunk_vector':
-                # PostgreSQLのvector型を文字列として処理
-                vector_str = value.strip('[]')  # 前後の括弧を削除
-                vector_list = [float(x) for x in vector_str.split(',')]  # カンマで分割して浮動小数点数のリストに変換
+                vector_str = value.strip('[]')
+                vector_list = [float(x) for x in vector_str.split(',')]
                 vector_sample = vector_list[:2]
                 logger.info(f"{key}: vector({len(vector_list)}) - {vector_sample} (First 2 elements)\n")
             else:
                 logger.info(f"{key}: {type(value).__name__} - {value}")
     else:
-        logger.warning("No data found in the document_vectors table.")
+        logger.warning(f"No data found in the {table_name} table.")
 
-def get_record_count(cursor):
-    cursor.execute("SELECT COUNT(*) FROM document_vectors")
+def get_record_count(cursor, table_name):
+    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
     return cursor.fetchone()['count']
+
+def get_all_tables(cursor):
+    cursor.execute("""
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name LIKE 'document_vectors%'
+    """)
+    return [row['table_name'] for row in cursor.fetchall()]
 
 def main():
     conn = None
@@ -93,31 +100,37 @@ def main():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        table_structure = get_table_structure(cursor)
-        logger.info("------ テーブル構造 ------")
-        if table_structure:
-            for column in table_structure:
-                logger.info(f"  - {column['column_name']}: {column['data_type']}")
-        else:
-            logger.warning("No table structure information found.")
+        tables = get_all_tables(cursor)
+        
+        for table_name in tables:
+            logger.info(f"\n===== テーブル: {table_name} =====")
+            
+            table_structure = get_table_structure(cursor, table_name)
+            logger.info("------ テーブル構造 ------")
+            if table_structure:
+                for column in table_structure:
+                    logger.info(f"  - {column['column_name']}: {column['data_type']}")
+            else:
+                logger.warning(f"No table structure information found for {table_name}.")
 
-        logger.info("\n------ インデックス情報 ------")
-        index_info = get_index_info(cursor)
-        if index_info:
-            for index in index_info:
-                logger.info(f"インデックス名: {index['index_name']}")
-                logger.info(f"  カラム: {index['column_name']}")
-                logger.info(f"  タイプ: {index['index_type']}")
-                logger.info(f"  定義: {index['index_definition']}")
-                logger.info("  ---")
-        else:
-            logger.warning("No index information found.")
+            logger.info("\n------ インデックス情報 ------")
+            index_info = get_index_info(cursor, table_name)
+            if index_info:
+                for index in index_info:
+                    logger.info(f"インデックス名: {index['index_name']}")
+                    logger.info(f"  カラム: {index['column_name']}")
+                    logger.info(f"  タイプ: {index['index_type']}")
+                    logger.info(f"  定義: {index['index_definition']}")
+                    logger.info("  ---")
+            else:
+                logger.warning(f"No index information found for {table_name}.")
 
-        log_sample_data(cursor)
+            log_sample_data(cursor, table_name)
 
-        record_count = get_record_count(cursor)
-        logger.info(f"\n------ レコード数 ------")
-        logger.info(f"document_vectors テーブルの総レコード数: {record_count}")
+            record_count = get_record_count(cursor, table_name)
+            logger.info(f"\n------ レコード数 ------")
+            logger.info(f"{table_name} テーブルの総レコード数: {record_count}")
+
         logger.info("\nデータベースの読み取りが完了しました。")
     except psycopg2.Error as e:
         logger.error(f"データベースエラーが発生しました: {e}")
@@ -131,4 +144,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    

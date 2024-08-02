@@ -6,7 +6,7 @@ from datetime import datetime
 import os
 import csv
 import pandas as pd
-from config import INDEX_TYPE, PDF_INPUT_DIR, CSV_OUTPUT_DIR, PIPELINE_EXECUTION_MODE
+from config import INDEX_TYPE, PDF_INPUT_DIR, CSV_OUTPUT_DIR, PIPELINE_EXECUTION_MODE, ENABLE_ALL_CSV, ENABLE_CATEGORY_TABLES, PROCESS_CATEGORIES
 
 log_dir = "/app/data/log"
 os.makedirs(log_dir, exist_ok=True)
@@ -21,7 +21,6 @@ logging.basicConfig(filename=run_pipeline_log, level=logging.INFO, format='%(asc
 logger = logging.getLogger(__name__)
 
 csv_output_file = f"{log_dir}/run_pipeline.csv"
-ENABLE_ALL_CSV = os.getenv("ENABLE_ALL_CSV", "false").lower() == "true"
 
 def count_csv_rows(directory):
     if ENABLE_ALL_CSV:
@@ -34,15 +33,16 @@ def count_csv_rows(directory):
             return 0
     else:
         total_rows = 0
-        for root, _, files in os.walk(directory):
-            if "all" in root.split(os.path.sep):
-                continue
-            for filename in files:
-                if filename.endswith('.csv'):
-                    with open(os.path.join(root, filename), 'r') as csvfile:
-                        reader = csv.reader(csvfile)
-                        rows = sum(1 for row in reader) - 1  # Subtract 1 to exclude header
-                        total_rows += rows
+        for category in PROCESS_CATEGORIES.split(','):
+            category = category.strip()
+            category_dir = os.path.join(directory, category)
+            if os.path.isdir(category_dir):
+                for filename in os.listdir(category_dir):
+                    if filename.endswith('.csv'):
+                        with open(os.path.join(category_dir, filename), 'r') as csvfile:
+                            reader = csv.reader(csvfile)
+                            rows = sum(1 for row in reader) - 1  # Subtract 1 to exclude header
+                            total_rows += rows
         return total_rows
 
 def get_file_size(file_path):
@@ -54,7 +54,7 @@ def append_to_csv(filename, index_type, num_of_rows, execution_time):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     new_row = pd.DataFrame({
-        'index': [0],  # 仮の値を設定
+        'index': [0],  # Set a temporary value
         'filename': [filename],
         'index_type': [index_type],
         'num_of_rows': [num_of_rows],
@@ -78,7 +78,7 @@ def run_script(script_name):
     logger.info(f"Starting execution of {script_name}")
 
     try:
-        # スクリプトを実行
+        # Execute the script
         process = subprocess.Popen(['python', script_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate()
 
@@ -98,6 +98,8 @@ def run_script(script_name):
             logger.info(f"  - Index type: {INDEX_TYPE.upper()}")
             logger.info(f"  - Rows inserted: {row_count}")
             logger.info(f"  - ENABLE_ALL_CSV: {ENABLE_ALL_CSV}")
+            logger.info(f"  - ENABLE_CATEGORY_TABLES: {ENABLE_CATEGORY_TABLES}")
+            logger.info(f"  - PROCESS_CATEGORIES: {PROCESS_CATEGORIES}")
             append_to_csv(script_name, INDEX_TYPE.upper(), row_count, execution_time)
         elif script_name == 'vectorizer.py':
             pdf_count = sum([len(files) for _, _, files in os.walk(PDF_INPUT_DIR) if any(f.endswith('.pdf') for f in files)])
@@ -119,7 +121,7 @@ def combine_logs():
                 with open(log_file, 'r') as infile:
                     outfile.write(infile.read())
 
-    # ログファイルをソート
+    # Sort log files
     with open(combined_log, 'r') as f:
         sorted_logs = sorted(f.readlines(), key=lambda x: x.split(' - ')[0])
 
@@ -132,6 +134,8 @@ def main():
     logger.info("Starting pipeline execution")
     logger.info(f"Using index type: {INDEX_TYPE.upper()}")
     logger.info(f"ENABLE_ALL_CSV: {ENABLE_ALL_CSV}")
+    logger.info(f"ENABLE_CATEGORY_TABLES: {ENABLE_CATEGORY_TABLES}")
+    logger.info(f"PROCESS_CATEGORIES: {PROCESS_CATEGORIES}")
     logger.info(f"PIPELINE_EXECUTION_MODE: {PIPELINE_EXECUTION_MODE}")
 
     if PIPELINE_EXECUTION_MODE == "BOTH":

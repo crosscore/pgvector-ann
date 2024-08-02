@@ -13,7 +13,7 @@ CATEGORY_NAME = os.environ.get('CATEGORY_NAME', 'analytics_and_big_data')
 
 required_directories = [
     "../data/log",
-    "../data/csv/search_results"
+    "../data/search_results_csv"
 ]
 for directory in required_directories:
     os.makedirs(directory, exist_ok=True)
@@ -72,7 +72,7 @@ def search_similar_chunks(cursor, query_vector, top_n=100):
     search_query = f"""
     SELECT file_name, document_page, chunk_no, chunk_text,
             (chunk_vector::{vector_type} <#> %s::{vector_type}) AS distance
-    FROM document_vectors
+    FROM {CATEGORY_NAME}
     ORDER BY distance ASC
     LIMIT %s;
     """
@@ -80,27 +80,24 @@ def search_similar_chunks(cursor, query_vector, top_n=100):
     return cursor.fetchall()
 
 def perform_search(cursor, search_text, file_name, document_page, top_n=100):
-    # Measure memory usage before the search
     before_stats = get_container_stats(POSTGRES_CONTAINER_NAME)
 
     start_time = time.time()
     query_vector = create_embedding(search_text)
     similar_chunks = search_similar_chunks(cursor, query_vector, top_n)
-    search_time = round(time.time() - start_time, 4)  # Round to 4 decimal places
+    search_time = round(time.time() - start_time, 4)
 
-    # Measure memory usage after the search
     after_stats = get_container_stats(POSTGRES_CONTAINER_NAME)
 
-    # Find the target rank
     target_rank = next((i + 1 for i, chunk in enumerate(similar_chunks)
                         if chunk[0] == file_name and int(chunk[1]) == int(document_page)), top_n + 1)
 
     return search_time, similar_chunks, target_rank, before_stats, after_stats
 
 def process_search_csv():
-    search_csv = f'../data/csv/search/search_{CATEGORY_NAME}.csv'
-    before_search_file = f'../data/csv/search_results/before_search_{CATEGORY_NAME}.csv'
-    after_search_file = f'../data/csv/search_results/after_search_{CATEGORY_NAME}.csv'
+    search_csv = f'../data/search_csv/search_{CATEGORY_NAME}.csv'
+    before_search_file = f'../data/search_results_csv/before_search_{CATEGORY_NAME}.csv'
+    after_search_file = f'../data/search_results_csv/after_search_{CATEGORY_NAME}.csv'
 
     df = pd.read_csv(search_csv)
     before_results = []
@@ -129,6 +126,7 @@ def process_search_csv():
                     'filepath': file_name,
                     'page': document_page,
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S%z'),
+                    'category': CATEGORY_NAME,
                 }
 
                 for stats, results in [(before_stats, before_results), (after_stats, after_results)]:
@@ -142,19 +140,35 @@ def process_search_csv():
                         })
                         results.append(current_stats)
 
-                logger.info(f"Processed {index + 1}/{len(df)} searches")
+                logger.info(f"Processed {index + 1}/{len(df)} searches for category {CATEGORY_NAME}")
 
     for results, filename in [
         (before_results, before_search_file),
         (after_results, after_search_file)
     ]:
         results_df = pd.DataFrame(results)
-        results_df.to_csv(filename, index=False)
-        logger.info(f"Search results saved to {filename}")
+        
+        if os.path.exists(filename):
+            results_df.to_csv(filename, mode='a', header=False, index=False)
+            logger.info(f"Appended search results to existing file: {filename}")
+        else:
+            results_df.to_csv(filename, index=False)
+            logger.info(f"Created new file with search results: {filename}")
 
 def get_row_count(cursor):
-    cursor.execute("SELECT COUNT(*) FROM document_vectors;")
+    cursor.execute(f"SELECT COUNT(*) FROM {CATEGORY_NAME};")
     return cursor.fetchone()[0]
 
+def main():
+    logger.info(f"Starting auto_search for category: {CATEGORY_NAME}")
+    logger.info(f"Using table: {CATEGORY_NAME}")
+    
+    try:
+        process_search_csv()
+        logger.info(f"Completed auto_search for category: {CATEGORY_NAME}")
+    except Exception as e:
+        logger.error(f"Error during auto_search for category {CATEGORY_NAME}: {str(e)}")
+        raise
+
 if __name__ == "__main__":
-    process_search_csv()
+    main()

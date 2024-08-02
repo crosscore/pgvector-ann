@@ -54,3 +54,5 @@ POSTGRES_CONTAINER_NAME = os.getenv("POSTGRES_CONTAINER_NAME", "pgvector_db")
 SEARCH_CSV_OUTPUT_DIR = os.getenv("SEARCH_CSV_OUTPUT_DIR", '/app/data/search_csv')
 ENABLE_ALL_CSV = os.getenv("ENABLE_ALL_CSV", "true")
 PIPELINE_EXECUTION_MODE = os.getenv("PIPELINE_EXECUTION_MODE", "csv_to_pgvector")
+ENABLE_CATEGORY_TABLES = os.getenv("ENABLE_CATEGORY_TABLES", "false").lower() == "true"
+PROCESS_CATEGORIES = os.getenv("PROCESS_CATEGORIES", "analytics_and_big_data")
