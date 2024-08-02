@@ -42,9 +42,9 @@ else:
         api_version=AZURE_OPENAI_API_VERSION
     )
 
-async def save_stats_async(stats, filename, row_count, search_time, question):
+async def save_stats_async(stats, filename, row_count, search_time, question, filepath, page, target_rank):
     await asyncio.get_event_loop().run_in_executor(
-        None, save_memory_stats_with_extra_info, stats, filename, row_count, search_time, question
+        None, save_memory_stats_with_extra_info, stats, filename, row_count, search_time, question, filepath, page, target_rank
     )
 
 @app.get("/pdf/{path:path}")
@@ -83,11 +83,14 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_json()
-            question, top_n = data["question"], int(data.get("top_n", 20))
+            question = data["question"]
+            top_n = int(data.get("top_n", 20))
+            filepath = data.get("filepath")
+            page = data.get("page")
 
             question_vector = client.embeddings.create(
                 input=question,
-                model="text-embedding-3-large"
+                model=AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT
             ).data[0].embedding
 
             logger.info(f"Attempting to get stats for container: {POSTGRES_CONTAINER_NAME}")
@@ -106,25 +109,31 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 after_search_stats = await collect_memory_stats(POSTGRES_CONTAINER_NAME, duration=1)
 
-                formatted_results = [
-                    {
+                formatted_results = []
+                target_rank = None
+                for index, (file_name, document_page, chunk_no, chunk_text, distance) in enumerate(results, start=1):
+                    result = {
                         "file_name": str(file_name),
                         "page": int(document_page),
                         "chunk_no": int(chunk_no),
                         "chunk_text": str(chunk_text),
                         "distance": float(distance),
-                        "link_text": f"{os.path.basename(file_name)}, p.{document_page}",
+                        "category": os.path.basename(os.path.dirname(file_name)),
+                        "link_text": f"/{os.path.relpath(file_name, '/app/data/pdf')}, p.{document_page}",
                         "link": f"pdf/{os.path.relpath(file_name, '/app/data/pdf')}?page={document_page}",
                     }
-                    for file_name, document_page, chunk_no, chunk_text, distance in results
-                ]
+                    formatted_results.append(result)
 
-                asyncio.create_task(save_stats_async(before_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR ,'before_search.csv'), row_count, search_time, question))
-                asyncio.create_task(save_stats_async(after_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR, 'after_search.csv'), row_count, search_time, question))
+                    if filepath and page:
+                        if os.path.basename(file_name) == os.path.basename(filepath) and int(document_page) == int(page):
+                            target_rank = index
 
+                asyncio.create_task(save_stats_async(before_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR, 'before_search.csv'), row_count, search_time, question, filepath, page, target_rank))
+                asyncio.create_task(save_stats_async(after_search_stats, os.path.join(SEARCH_CSV_OUTPUT_DIR, 'after_search.csv'), row_count, search_time, question, filepath, page, target_rank))
                 response_data = {
                     "results": formatted_results,
                     "search_time": search_time,
+                    "target_rank": target_rank
                 }
                 await websocket.send_json(response_data)
             except Exception as e:

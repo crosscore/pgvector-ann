@@ -81,6 +81,10 @@ def log_sample_data(cursor):
     else:
         logger.warning("No data found in the document_vectors table.")
 
+def get_record_count(cursor):
+    cursor.execute("SELECT COUNT(*) FROM document_vectors")
+    return cursor.fetchone()['count']
+
 def main():
     conn = None
     cursor = None
@@ -111,7 +115,10 @@ def main():
 
         log_sample_data(cursor)
 
-        logger.info("データベースの読み取りが完了しました。")
+        record_count = get_record_count(cursor)
+        logger.info(f"\n------ レコード数 ------")
+        logger.info(f"document_vectors テーブルの総レコード数: {record_count}")
+        logger.info("\nデータベースの読み取りが完了しました。")
     except psycopg2.Error as e:
         logger.error(f"データベースエラーが発生しました: {e}")
     except Exception as e:
@@ -124,3 +131,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    

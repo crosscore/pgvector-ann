@@ -55,7 +55,7 @@ def create_table_and_index(cursor):
         WITH (m = {HNSW_M}, ef_construction = {HNSW_EF_CONSTRUCTION});
         """
         cursor.execute(create_index_query)
-        logger.info("HNSW index created successfully")
+        logger.info(f"HNSW index created successfully with parameters: m = {HNSW_M}, ef_construction = {HNSW_EF_CONSTRUCTION}")
     elif INDEX_TYPE == "ivfflat":
         create_index_query = f"""
         CREATE INDEX IF NOT EXISTS ivfflat_document_vectors_chunk_vector_idx ON document_vectors
@@ -63,7 +63,7 @@ def create_table_and_index(cursor):
         WITH (lists = {IVFFLAT_LISTS});
         """
         cursor.execute(create_index_query)
-        logger.info("IVFFlat index created successfully")
+        logger.info(f"IVFFlat index created successfully with parameter: lists = {IVFFLAT_LISTS}")
     elif INDEX_TYPE == "none":
         logger.info("No index created as per configuration")
     else:
@@ -128,8 +128,13 @@ def process_csv_files():
                             process_csv_file(csv_file_path, conn)
 
             logger.info(f"CSV files have been processed and inserted into the database with {INDEX_TYPE.upper()} index.")
+            if INDEX_TYPE == "hnsw":
+                logger.info(f"HNSW index parameters: m = {HNSW_M}, ef_construction = {HNSW_EF_CONSTRUCTION}")
+            elif INDEX_TYPE == "ivfflat":
+                logger.info(f"IVFFlat index parameter: lists = {IVFFLAT_LISTS}")
     except Exception as e:
         logger.error(f"An error occurred during processing: {e}")
 
 if __name__ == "__main__":
     process_csv_files()
+    

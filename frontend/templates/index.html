@@ -12,13 +12,16 @@
 
         <div class="search-container">
             <input type="text" id="search-input" placeholder="Enter your search query">
-            <input type="number" id="top-n-input" value="20" min="1" max="100">
+            <input type="number" id="top-n-input" placeholder="Top N results" value="20">
+            <input type="text" id="filepath-input" placeholder="category_name/test.pdf">
+            <input type="number" id="page-input" placeholder="Page number">
             <button id="search-button">Search</button>
         </div>
 
         <div id="search-metrics" style="display: none;">
             <h2>Search Metrics</h2>
             <p>Search Time: <span id="search-time"></span> seconds</p>
+            <p>Target Rank: <span id="target-rank"></span></p>
         </div>
 
         <div id="search-results">

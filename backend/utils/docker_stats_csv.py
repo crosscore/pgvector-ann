@@ -46,7 +46,7 @@ def parse_timestamp(timestamp_str):
         logger.error(f"Error parsing timestamp: {str(e)}")
         return datetime.now(pytz.utc)
 
-def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time, keyword):
+def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time, keyword, filepath, page, target_rank):
     try:
         jst = pytz.timezone('Asia/Tokyo')
 
@@ -60,10 +60,13 @@ def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time,
             'ivfflat_probes': int(IVFFLAT_PROBES),
             'num_of_rows': int(num_of_rows),
             'search_time': round(float(search_time), 4),
+            'target_rank': int(target_rank) if target_rank is not None else None,
             'keyword': str(keyword),
+            'filepath': str(filepath) if filepath else '',
+            'page': int(page) if page is not None else None,
             'usage': int(memory_stats.get('usage', 0)),
             'limit': int(memory_stats.get('limit', 0)),
-            **{k: int(v) for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float))}
+            **{k: int(v) if v is not None else None for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float)) or v is None}
         }
 
         read_time = parse_timestamp(stats['read'])
@@ -74,31 +77,31 @@ def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time,
 
         columns = [
             'index_type', 'hnsw_m', 'hnsw_ef_construction', 'hnsw_ef_search', 'ivfflat_lists', 'ivfflat_probes',
-            'num_of_rows', 'search_time', 'keyword', 'timestamp',
+            'num_of_rows', 'search_time', 'target_rank', 'keyword', 'filepath', 'page', 'timestamp',
             'usage', 'limit'
         ] + [col for col in df.columns if col not in [
             'index_type', 'hnsw_m', 'hnsw_ef_construction', 'hnsw_ef_search', 'ivfflat_lists', 'ivfflat_probes',
-            'num_of_rows', 'search_time', 'keyword', 'timestamp',
+            'num_of_rows', 'search_time', 'target_rank', 'keyword', 'filepath', 'page', 'timestamp',
             'usage', 'limit'
         ]]
         df = df[columns]
 
-        # Explicitly set integer columns to int64 dtype
+        # Explicitly set integer columns to int64 dtype, handling None values
         int_columns = ['hnsw_m', 'hnsw_ef_construction', 'hnsw_ef_search', 'ivfflat_lists', 'ivfflat_probes',
-                        'num_of_rows', 'usage', 'limit'] + [col for col in df.columns if col not in [
-                        'index_type', 'search_time', 'keyword', 'timestamp'
+                       'num_of_rows', 'target_rank', 'page', 'usage', 'limit'] + [col for col in df.columns if col not in [
+                       'index_type', 'search_time', 'keyword', 'filepath', 'timestamp'
         ]]
         for col in int_columns:
-            df[col] = df[col].astype('int64')
+            df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64')  # Use 'Int64' instead of 'int64'
 
         os.makedirs(SEARCH_CSV_OUTPUT_DIR, exist_ok=True)
         if os.path.exists(filename):
             existing_df = pd.read_csv(filename, index_col='index', parse_dates=['timestamp'])
             existing_df['timestamp'] = pd.to_datetime(existing_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S%z')
-            # Ensure integer columns in existing_df are also int64
+            # Ensure integer columns in existing_df are also Int64
             for col in int_columns:
                 if col in existing_df.columns:
-                    existing_df[col] = existing_df[col].astype('int64')
+                    existing_df[col] = pd.to_numeric(existing_df[col], errors='coerce').astype('Int64')
             df = pd.concat([existing_df, df], ignore_index=True)
 
         df.index.name = 'index'
