@@ -6,7 +6,7 @@ from datetime import datetime
 import os
 import csv
 import pandas as pd
-from config import INDEX_TYPE, PDF_INPUT_DIR, CSV_OUTPUT_DIR, PIPELINE_EXECUTION_MODE, ENABLE_ALL_CSV, ENABLE_CATEGORY_TABLES, PROCESS_CATEGORIES
+from config import INDEX_TYPE, PDF_INPUT_DIR, CSV_OUTPUT_DIR, PIPELINE_EXECUTION_MODE, ENABLE_ALL_CSV
 
 log_dir = "/app/data/log"
 os.makedirs(log_dir, exist_ok=True)
@@ -23,27 +23,24 @@ logger = logging.getLogger(__name__)
 csv_output_file = f"{log_dir}/run_pipeline.csv"
 
 def count_csv_rows(directory):
+    total_rows = 0
     if ENABLE_ALL_CSV:
-        all_csv_path = "/app/data/csv/all/all.csv"
+        all_csv_path = os.path.join(directory, "all", "all.csv")
         if os.path.exists(all_csv_path):
             with open(all_csv_path, 'r') as csvfile:
                 reader = csv.reader(csvfile)
-                return sum(1 for row in reader) - 1  # Subtract 1 to exclude header
-        else:
-            return 0
+                total_rows = sum(1 for row in reader) - 1  # Subtract 1 to exclude header
     else:
-        total_rows = 0
-        for category in PROCESS_CATEGORIES.split(','):
-            category = category.strip()
+        for category in os.listdir(directory):
             category_dir = os.path.join(directory, category)
-            if os.path.isdir(category_dir):
+            if os.path.isdir(category_dir) and category != "all":
                 for filename in os.listdir(category_dir):
                     if filename.endswith('.csv'):
                         with open(os.path.join(category_dir, filename), 'r') as csvfile:
                             reader = csv.reader(csvfile)
                             rows = sum(1 for row in reader) - 1  # Subtract 1 to exclude header
                             total_rows += rows
-        return total_rows
+    return total_rows
 
 def get_file_size(file_path):
     size_bytes = os.path.getsize(file_path)
@@ -98,8 +95,6 @@ def run_script(script_name):
             logger.info(f"  - Index type: {INDEX_TYPE.upper()}")
             logger.info(f"  - Rows inserted: {row_count}")
             logger.info(f"  - ENABLE_ALL_CSV: {ENABLE_ALL_CSV}")
-            logger.info(f"  - ENABLE_CATEGORY_TABLES: {ENABLE_CATEGORY_TABLES}")
-            logger.info(f"  - PROCESS_CATEGORIES: {PROCESS_CATEGORIES}")
             append_to_csv(script_name, INDEX_TYPE.upper(), row_count, execution_time)
         elif script_name == 'vectorizer.py':
             pdf_count = sum([len(files) for _, _, files in os.walk(PDF_INPUT_DIR) if any(f.endswith('.pdf') for f in files)])
@@ -134,8 +129,6 @@ def main():
     logger.info("Starting pipeline execution")
     logger.info(f"Using index type: {INDEX_TYPE.upper()}")
     logger.info(f"ENABLE_ALL_CSV: {ENABLE_ALL_CSV}")
-    logger.info(f"ENABLE_CATEGORY_TABLES: {ENABLE_CATEGORY_TABLES}")
-    logger.info(f"PROCESS_CATEGORIES: {PROCESS_CATEGORIES}")
     logger.info(f"PIPELINE_EXECUTION_MODE: {PIPELINE_EXECUTION_MODE}")
 
     if PIPELINE_EXECUTION_MODE == "BOTH":

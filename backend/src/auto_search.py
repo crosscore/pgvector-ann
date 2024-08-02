@@ -8,6 +8,7 @@ from openai import AzureOpenAI, OpenAI
 import logging
 from datetime import datetime
 import docker
+import re
 
 CATEGORY_NAME = os.environ.get('CATEGORY_NAME', 'analytics_and_big_data')
 
@@ -34,6 +35,19 @@ else:
 
 docker_client = docker.from_env()
 
+def sanitize_table_name(name):
+    # Convert to lowercase first
+    name = name.lower()
+    # Check if the name is a reserved word
+    if name in ['all', 'order', 'user', 'table', 'select', 'where', 'from', 'group', 'by']:
+        name = f"t_{name}"
+    # Remove any character that isn't alphanumeric or underscore
+    sanitized = re.sub(r'\W+', '_', name)
+    # Ensure the name starts with a letter
+    if not sanitized[0].isalpha():
+        sanitized = "t_" + sanitized
+    return sanitized
+
 def get_db_connection():
     return psycopg2.connect(
         dbname=PGVECTOR_DB_NAME,
@@ -44,17 +58,21 @@ def get_db_connection():
     )
 
 def create_embedding(text):
-    if ENABLE_OPENAI:
-        response = client.embeddings.create(
-            input=text,
-            model="text-embedding-3-large"
-        )
-    else:
-        response = client.embeddings.create(
-            input=text,
-            model=AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT
-        )
-    return response.data[0].embedding
+    try:
+        if ENABLE_OPENAI:
+            response = client.embeddings.create(
+                input=text,
+                model="text-embedding-3-large"
+            )
+        else:
+            response = client.embeddings.create(
+                input=text,
+                model=AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT
+            )
+        return response.data[0].embedding
+    except Exception as e:
+        logger.error(f"Error creating embedding: {str(e)}")
+        raise
 
 def get_container_stats(container_name):
     try:
@@ -67,24 +85,29 @@ def get_container_stats(container_name):
         logger.error(f"Error getting container stats: {str(e)}")
     return None
 
-def search_similar_chunks(cursor, query_vector, top_n=100):
+def search_similar_chunks(cursor, query_vector, table_name, top_n=100):
+    sanitized_table_name = sanitize_table_name(table_name)
     vector_type = "halfvec(3072)" if INDEX_TYPE in ["hnsw", "ivfflat"] else "vector(3072)"
     search_query = f"""
     SELECT file_name, document_page, chunk_no, chunk_text,
             (chunk_vector::{vector_type} <#> %s::{vector_type}) AS distance
-    FROM {CATEGORY_NAME}
+    FROM {sanitized_table_name}
     ORDER BY distance ASC
     LIMIT %s;
     """
-    cursor.execute(search_query, (query_vector, top_n))
-    return cursor.fetchall()
+    try:
+        cursor.execute(search_query, (query_vector, top_n))
+        return cursor.fetchall()
+    except psycopg2.Error as e:
+        logger.error(f"Database error during search: {str(e)}")
+        raise
 
-def perform_search(cursor, search_text, file_name, document_page, top_n=100):
+def perform_search(cursor, search_text, file_name, document_page, table_name, top_n=100):
     before_stats = get_container_stats(POSTGRES_CONTAINER_NAME)
 
     start_time = time.time()
     query_vector = create_embedding(search_text)
-    similar_chunks = search_similar_chunks(cursor, query_vector, top_n)
+    similar_chunks = search_similar_chunks(cursor, query_vector, table_name, top_n)
     search_time = round(time.time() - start_time, 4)
 
     after_stats = get_container_stats(POSTGRES_CONTAINER_NAME)
@@ -99,9 +122,15 @@ def process_search_csv():
     before_search_file = f'../data/search_results_csv/before_search_{CATEGORY_NAME}.csv'
     after_search_file = f'../data/search_results_csv/after_search_{CATEGORY_NAME}.csv'
 
+    if not os.path.exists(search_csv):
+        logger.error(f"Search CSV file not found: {search_csv}")
+        return
+
     df = pd.read_csv(search_csv)
     before_results = []
     after_results = []
+
+    table_name = sanitize_table_name(CATEGORY_NAME)
 
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
@@ -110,37 +139,40 @@ def process_search_csv():
                 file_name = row['file_name']
                 document_page = row['document_page']
 
-                search_time, similar_chunks, target_rank, before_stats, after_stats = perform_search(cursor, search_text, file_name, document_page)
+                try:
+                    search_time, similar_chunks, target_rank, before_stats, after_stats = perform_search(cursor, search_text, file_name, document_page, table_name)
 
-                base_stats = {
-                    'index_type': INDEX_TYPE,
-                    'hnsw_m': HNSW_M,
-                    'hnsw_ef_construction': HNSW_EF_CONSTRUCTION,
-                    'hnsw_ef_search': HNSW_EF_SEARCH,
-                    'ivfflat_lists': IVFFLAT_LISTS,
-                    'ivfflat_probes': IVFFLAT_PROBES,
-                    'num_of_rows': get_row_count(cursor),
-                    'search_time': search_time,
-                    'target_rank': int(target_rank),
-                    'keyword': search_text,
-                    'filepath': file_name,
-                    'page': document_page,
-                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S%z'),
-                    'category': CATEGORY_NAME,
-                }
+                    base_stats = {
+                        'index_type': INDEX_TYPE,
+                        'hnsw_m': HNSW_M,
+                        'hnsw_ef_construction': HNSW_EF_CONSTRUCTION,
+                        'hnsw_ef_search': HNSW_EF_SEARCH,
+                        'ivfflat_lists': IVFFLAT_LISTS,
+                        'ivfflat_probes': IVFFLAT_PROBES,
+                        'num_of_rows': get_row_count(cursor, table_name),
+                        'search_time': search_time,
+                        'target_rank': int(target_rank),
+                        'keyword': search_text,
+                        'filepath': file_name,
+                        'page': document_page,
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S%z'),
+                        'category': CATEGORY_NAME,
+                    }
 
-                for stats, results in [(before_stats, before_results), (after_stats, after_results)]:
-                    if stats:
-                        memory_stats = stats.get('memory_stats', {})
-                        current_stats = base_stats.copy()
-                        current_stats.update({
-                            'usage': memory_stats.get('usage', 0),
-                            'limit': memory_stats.get('limit', 0),
-                            **{k: v for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float))}
-                        })
-                        results.append(current_stats)
+                    for stats, results in [(before_stats, before_results), (after_stats, after_results)]:
+                        if stats:
+                            memory_stats = stats.get('memory_stats', {})
+                            current_stats = base_stats.copy()
+                            current_stats.update({
+                                'usage': memory_stats.get('usage', 0),
+                                'limit': memory_stats.get('limit', 0),
+                                **{k: v for k, v in memory_stats.get('stats', {}).items() if isinstance(v, (int, float))}
+                            })
+                            results.append(current_stats)
 
-                logger.info(f"Processed {index + 1}/{len(df)} searches for category {CATEGORY_NAME}")
+                    logger.info(f"Processed {index + 1}/{len(df)} searches for category {CATEGORY_NAME}")
+                except Exception as e:
+                    logger.error(f"Error processing search for index {index}: {str(e)}")
 
     for results, filename in [
         (before_results, before_search_file),
@@ -155,13 +187,15 @@ def process_search_csv():
             results_df.to_csv(filename, index=False)
             logger.info(f"Created new file with search results: {filename}")
 
-def get_row_count(cursor):
-    cursor.execute(f"SELECT COUNT(*) FROM {CATEGORY_NAME};")
+def get_row_count(cursor, table_name):
+    sanitized_table_name = sanitize_table_name(table_name)
+    cursor.execute(f"SELECT COUNT(*) FROM {sanitized_table_name};")
     return cursor.fetchone()[0]
 
 def main():
     logger.info(f"Starting auto_search for category: {CATEGORY_NAME}")
-    logger.info(f"Using table: {CATEGORY_NAME}")
+    sanitized_table_name = sanitize_table_name(CATEGORY_NAME)
+    logger.info(f"Using table: {sanitized_table_name}")
     
     try:
         process_search_csv()

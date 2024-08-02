@@ -99,7 +99,7 @@ def process_csv_file(file_path, cursor, table_name):
             logger.warning(f"Incorrect vector dimension for row. Expected 3072, got {len(embedding)}. Skipping.")
             continue
 
-        business_category = row.get('business_category', os.path.basename(os.path.dirname(file_path)))
+        business_category = row.get('business_category', table_name)
 
         data.append((
             row['file_name'], row['document_page'], row['chunk_no'], row['chunk_text'],
@@ -114,65 +114,43 @@ def process_csv_file(file_path, cursor, table_name):
         logger.error(f"Error inserting batch into {sanitized_table_name}: {e}")
         raise
 
-def process_category_csv_files(conn):
-    logger.info("Processing CSV files by category")
-    for category in PROCESS_CATEGORIES.split(','):
-        category = category.strip()
-        category_dir = os.path.join(CSV_OUTPUT_DIR, category)
-        
-        if not os.path.isdir(category_dir):
-            logger.warning(f"Category directory not found: {category_dir}")
-            continue
-
-        table_name = f"document_vectors_{category}"
-        
-        with conn.cursor() as cursor:
-            create_table_and_index(cursor, table_name)
-            
-            csv_files = [f for f in os.listdir(category_dir) if f.endswith('.csv')]
-            if not csv_files:
-                logger.warning(f"No CSV files found in category directory: {category_dir}")
-                continue
-
-            for file in csv_files:
-                csv_file_path = os.path.join(category_dir, file)
-                try:
-                    process_csv_file(csv_file_path, cursor, table_name)
-                    conn.commit()
-                except Exception as e:
-                    conn.rollback()
-                    logger.error(f"Error processing {csv_file_path}: {e}")
-
 def process_all_csv(conn):
     logger.info("Processing all.csv file")
     all_csv_path = os.path.join(CSV_OUTPUT_DIR, "all", "all.csv")
     if os.path.exists(all_csv_path):
         with conn.cursor() as cursor:
-            create_table_and_index(cursor, "document_vectors")
-            process_csv_file(all_csv_path, cursor, "document_vectors")
+            table_name = sanitize_table_name("all_data")  # Use "all_data" instead of "all"
+            create_table_and_index(cursor, table_name)
+            process_csv_file(all_csv_path, cursor, table_name)
             conn.commit()
     else:
         logger.error(f"all.csv file not found at {all_csv_path}")
         raise FileNotFoundError(f"all.csv file not found at {all_csv_path}")
 
 def process_csv_files():
-    ENABLE_ALL_CSV = os.getenv("ENABLE_ALL_CSV", "false").lower() == "true"
-    ENABLE_CATEGORY_TABLES = os.getenv("ENABLE_CATEGORY_TABLES", "false").lower() == "true"
-
     logger.info(f"Processing with ENABLE_ALL_CSV: {ENABLE_ALL_CSV}")
-    logger.info(f"Processing with ENABLE_CATEGORY_TABLES: {ENABLE_CATEGORY_TABLES}")
-
-    if not ENABLE_ALL_CSV and not ENABLE_CATEGORY_TABLES:
-        error_msg = "Neither ENABLE_ALL_CSV nor ENABLE_CATEGORY_TABLES is set to true. Please enable at least one processing mode."
-        logger.error(error_msg)
-        raise ValueError(error_msg)
 
     try:
         with get_db_connection() as conn:
             if ENABLE_ALL_CSV:
                 process_all_csv(conn)
-            if ENABLE_CATEGORY_TABLES:
-                process_category_csv_files(conn)
+            else:
+                for category in os.listdir(CSV_OUTPUT_DIR):
+                    category_dir = os.path.join(CSV_OUTPUT_DIR, category)
+                    if os.path.isdir(category_dir) and category.lower() != "all":
+                        logger.info(f"Processing category: {category}")
+                        with conn.cursor() as cursor:
+                            table_name = sanitize_table_name(category)
+                            create_table_and_index(cursor, table_name)
+                            for file in os.listdir(category_dir):
+                                if file.endswith('.csv'):
+                                    csv_file_path = os.path.join(category_dir, file)
+                                    try:
+                                        process_csv_file(csv_file_path, cursor, table_name)
+                                        conn.commit()
+                                    except Exception as e:
+                                        conn.rollback()
+                                        logger.error(f"Error processing {csv_file_path}: {e}")
 
             logger.info(f"CSV files have been processed and inserted into the database with {INDEX_TYPE.upper()} index.")
             if INDEX_TYPE == "hnsw":
