@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from datetime import datetime, timezone
 import re
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def get_db_connection():
@@ -134,15 +134,15 @@ def main():
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
         tables = get_all_tables(cursor)
-        
+
         if not tables:
             logger.warning("No tables found in the database.")
         else:
             logger.info(f"Found {len(tables)} tables in the database.")
-        
+
         for table_name in tables:
             logger.info(f"\n===== テーブル: {table_name} =====")
-            
+
             table_structure = get_table_structure(cursor, table_name)
             logger.info("------ テーブル構造 ------")
             if table_structure:

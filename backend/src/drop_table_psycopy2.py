@@ -3,7 +3,7 @@ import psycopg2
 from psycopg2 import sql
 import logging
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def get_db_connection():
@@ -31,7 +31,7 @@ def drop_all_tables(cursor, tables):
 
 def main():
     logger.info("全ての公開テーブルの削除プロセスを開始します。")
-    
+
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
@@ -47,7 +47,7 @@ def main():
         logger.error(f"データベース操作中にエラーが発生しました: {e}")
     except Exception as e:
         logger.error(f"予期せぬエラーが発生しました: {e}")
-    
+
     logger.info("テーブル削除プロセスが完了しました。")
 
 if __name__ == "__main__":
