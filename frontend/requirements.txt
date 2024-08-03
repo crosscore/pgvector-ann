@@ -1,5 +1,7 @@
+# pgvector-ann/frontend/requirements.txt
 fastapi
 uvicorn
 jinja2
 websockets
 python-dotenv
+httpx
