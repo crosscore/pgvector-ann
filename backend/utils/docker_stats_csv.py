@@ -88,8 +88,8 @@ def save_memory_stats_with_extra_info(stats, filename, num_of_rows, search_time,
 
         # Explicitly set integer columns to int64 dtype, handling None values
         int_columns = ['hnsw_m', 'hnsw_ef_construction', 'hnsw_ef_search', 'ivfflat_lists', 'ivfflat_probes',
-                       'num_of_rows', 'target_rank', 'page', 'usage', 'limit'] + [col for col in df.columns if col not in [
-                       'index_type', 'search_time', 'keyword', 'filepath', 'timestamp'
+                        'num_of_rows', 'target_rank', 'page', 'usage', 'limit'] + [col for col in df.columns if col not in [
+                        'index_type', 'search_time', 'keyword', 'filepath', 'timestamp'
         ]]
         for col in int_columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64')  # Use 'Int64' instead of 'int64'

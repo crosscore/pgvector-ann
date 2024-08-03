@@ -1,10 +1,7 @@
-# pgvector-ann/backend/src/reading_pgvector_psycopg2.py
 import os
 import logging
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from zoneinfo import ZoneInfo
-from datetime import datetime, timezone
+import psycopg
+from psycopg.rows import dict_row
 import re
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -19,9 +16,10 @@ def get_db_connection():
         'port': os.getenv('PGVECTOR_DB_PORT')
     }
     logger.info(f"Attempting to connect to database with params: {db_params}")
-    return psycopg2.connect(
+    return psycopg.connect(
         **db_params,
         options="-c timezone=Asia/Tokyo",
+        row_factory=dict_row
     )
 
 def sanitize_table_name(name):
@@ -34,7 +32,7 @@ def sanitize_table_name(name):
 
 def get_table_structure(cursor, table_name):
     sanitized_name = sanitize_table_name(table_name)
-    cursor.execute(f"""
+    cursor.execute("""
     SELECT column_name, data_type
     FROM information_schema.columns
     WHERE table_name = %s;
@@ -43,7 +41,7 @@ def get_table_structure(cursor, table_name):
 
 def get_index_info(cursor, table_name):
     sanitized_name = sanitize_table_name(table_name)
-    cursor.execute(f"""
+    cursor.execute("""
     SELECT
         i.relname AS index_name,
         a.attname AS column_name,
@@ -64,74 +62,54 @@ def get_index_info(cursor, table_name):
 
 def log_sample_data(cursor, table_name):
     sanitized_name = sanitize_table_name(table_name)
-    logger.info(f"\n------ サンプルデータ (最初の1行) from {sanitized_name} ------")
-    try:
-        cursor.execute(f"""
-        SELECT
-            file_name, document_page, chunk_no, chunk_text, model,
-            prompt_tokens, total_tokens, created_date_time,
-            chunk_vector, business_category
-        FROM {sanitized_name}
-        LIMIT 1
-        """)
-
-        sample = cursor.fetchone()
-
-        if sample:
-            for key, value in sample.items():
-                if key == 'created_date_time':
-                    if value.tzinfo is None:
-                        value = value.replace(tzinfo=timezone.utc)
-                    jst_time = value.astimezone(ZoneInfo("Asia/Tokyo"))
-                    logger.info(f"{key}: {type(value).__name__} - {jst_time}")
-                elif key == 'chunk_vector':
-                    vector_str = value.strip('[]')
-                    vector_list = [float(x) for x in vector_str.split(',')]
-                    vector_sample = vector_list[:5]
-                    logger.info(f"{key}: vector({len(vector_list)}) - {vector_sample} (First 5 elements)")
-                    logger.info(f"Vector min: {min(vector_list)}, max: {max(vector_list)}, avg: {sum(vector_list)/len(vector_list):.4f}")
+    cursor.execute(f"SELECT * FROM {sanitized_name} LIMIT 1;")
+    rows = cursor.fetchall()
+    if rows:
+        logger.info("------ Sample Data ------")
+        for row in rows:
+            formatted_row = {}
+            for key, value in row.items():
+                if key == 'chunk_vector':
+                    logger.info(f"Type of chunk_vector: {type(value)}")
+                    formatted_row[key] = value[:27] + " ...]" if len(value) > 20 else value
                 else:
-                    logger.info(f"{key}: {type(value).__name__} - {value}")
-        else:
-            logger.warning(f"No data found in the {sanitized_name} table.")
-    except psycopg2.Error as e:
-        logger.error(f"Error querying sample data from {sanitized_name}: {e}")
+                    formatted_row[key] = value
+            logger.info(formatted_row)
+    else:
+        logger.warning(f"No sample data found for {table_name}.")
 
 def get_record_count(cursor, table_name):
     sanitized_name = sanitize_table_name(table_name)
-    cursor.execute(f"SELECT COUNT(*) FROM {sanitized_name}")
+    cursor.execute(f"SELECT COUNT(*) FROM {sanitized_name};")
     return cursor.fetchone()['count']
 
 def get_all_tables(cursor):
     cursor.execute("""
     SELECT table_name
     FROM information_schema.tables
-    WHERE table_schema = 'public'
+    WHERE table_schema = 'public';
     """)
     return [row['table_name'] for row in cursor.fetchall()]
 
 def get_table_summary(cursor):
     tables = get_all_tables(cursor)
     summary = []
-    for table_name in tables:
-        sanitized_name = sanitize_table_name(table_name)
-        cursor.execute(f"SELECT COUNT(*) FROM {sanitized_name}")
-        count = cursor.fetchone()['count']
-        summary.append((table_name, count))
+    for table in tables:
+        record_count = get_record_count(cursor, table)
+        summary.append((table, record_count))
     return summary
 
 def print_table_summary(summary):
-    logger.info("\n===== テーブル一覧とレコード数 =====")
-    for table_name, count in summary:
-        logger.info(f"{table_name}: {count} レコード")
+    logger.info("------ Table Summary ------")
+    for table_name, record_count in summary:
+        logger.info(f"Table: {table_name}, Records: {record_count}")
 
 def main():
     conn = None
     cursor = None
     try:
-        logger.info("データベースからの読み取りを開始します。")
         conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor = conn.cursor()
 
         tables = get_all_tables(cursor)
 
@@ -141,24 +119,24 @@ def main():
             logger.info(f"Found {len(tables)} tables in the database.")
 
         for table_name in tables:
-            logger.info(f"\n===== テーブル: {table_name} =====")
+            logger.info(f"\n===== Table: {table_name} =====")
 
             table_structure = get_table_structure(cursor, table_name)
-            logger.info("------ テーブル構造 ------")
+            logger.info("------ Table Structure ------")
             if table_structure:
                 for column in table_structure:
                     logger.info(f"  - {column['column_name']}: {column['data_type']}")
             else:
                 logger.warning(f"No table structure information found for {table_name}.")
 
-            logger.info("\n------ インデックス情報 ------")
+            logger.info("\n------ Index Information ------")
             index_info = get_index_info(cursor, table_name)
             if index_info:
                 for index in index_info:
-                    logger.info(f"インデックス名: {index['index_name']}")
-                    logger.info(f"  カラム: {index['column_name']}")
-                    logger.info(f"  タイプ: {index['index_type']}")
-                    logger.info(f"  定義: {index['index_definition']}")
+                    logger.info(f"Index Name: {index['index_name']}")
+                    logger.info(f"  Column: {index['column_name']}")
+                    logger.info(f"  Type: {index['index_type']}")
+                    logger.info(f"  Definition: {index['index_definition']}")
                     logger.info("  ---")
             else:
                 logger.warning(f"No index information found for {table_name}.")
@@ -166,18 +144,17 @@ def main():
             log_sample_data(cursor, table_name)
 
             record_count = get_record_count(cursor, table_name)
-            logger.info(f"\n------ レコード数 ------")
-            logger.info(f"{table_name} テーブルの総レコード数: {record_count}")
+            logger.info(f"\n------ Record Count ------")
+            logger.info(f"Total record count for {table_name} table: {record_count}")
 
-        # 新しく追加した部分: テーブル一覧とレコード数の表示
         table_summary = get_table_summary(cursor)
         print_table_summary(table_summary)
 
-        logger.info("\nデータベースの読み取りが完了しました。")
-    except psycopg2.Error as e:
-        logger.error(f"データベースエラーが発生しました: {e}")
+        logger.info("\nDatabase reading completed.")
+    except psycopg.Error as e:
+        logger.error(f"Database error occurred: {e}")
     except Exception as e:
-        logger.error(f"予期せぬエラーが発生しました: {e}", exc_info=True)
+        logger.error(f"Unexpected error occurred: {e}", exc_info=True)
     finally:
         if cursor:
             cursor.close()

@@ -1,5 +1,5 @@
 # pgvector-ann/backend/utils/db_utils.py
-import psycopg2
+import psycopg
 from contextlib import contextmanager
 import logging
 from config import *
@@ -11,7 +11,7 @@ def get_db_connection():
     conn = None
     cursor = None
     try:
-        conn = psycopg2.connect(
+        conn = psycopg.connect(
             dbname=PGVECTOR_DB_NAME,
             user=PGVECTOR_DB_USER,
             password=PGVECTOR_DB_PASSWORD,
@@ -28,7 +28,7 @@ def get_db_connection():
             logger.info(f"Set hnsw.ef_search to {HNSW_EF_SEARCH}")
         conn.autocommit = False
         yield conn, cursor
-    except psycopg2.Error as e:
+    except psycopg.Error as e:
         logger.error(f"Database connection error: {e}")
         raise
     finally:

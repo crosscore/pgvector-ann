@@ -36,7 +36,6 @@ else:
 docker_client = docker.from_env()
 
 def sanitize_table_name(name):
-    # Convert to lowercase first
     name = name.lower()
     # Check if the name is a reserved word
     if name in ['all', 'order', 'user', 'table', 'select', 'where', 'from', 'group', 'by']:
@@ -179,7 +178,7 @@ def process_search_csv():
         (after_results, after_search_file)
     ]:
         results_df = pd.DataFrame(results)
-        
+
         if os.path.exists(filename):
             results_df.to_csv(filename, mode='a', header=False, index=False)
             logger.info(f"Appended search results to existing file: {filename}")
@@ -196,7 +195,7 @@ def main():
     logger.info(f"Starting auto_search for category: {CATEGORY_NAME}")
     sanitized_table_name = sanitize_table_name(CATEGORY_NAME)
     logger.info(f"Using table: {sanitized_table_name}")
-    
+
     try:
         process_search_csv()
         logger.info(f"Completed auto_search for category: {CATEGORY_NAME}")

@@ -3,7 +3,7 @@ langchain-text-splitters
 python-dotenv
 boto3
 pypdf
-psycopg2-binary
+psycopg[binary]
 pydantic
 pandas
 
